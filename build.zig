@@ -39,6 +39,7 @@ pub fn build(b: *std.Build) void {
     const mod_tests = b.addTest(.{
         .root_module = mod,
     });
+    bfe.build.addToTest(mod_tests,b);
 
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
