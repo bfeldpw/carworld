@@ -5,7 +5,6 @@ const cfg = bfe.cfg;
 const id_type = bfe.util.id_type;
 const stats = bfe.util.stats;
 const car = @import("car.zig");
-const gfx = @import("gfx_ext.zig");
 const input = @import("input_plugin.zig");
 
 pub fn main() !void {
@@ -16,25 +15,19 @@ pub fn main() !void {
     bfe.gfx.core.setFpsTarget(60.0);
     try bfe.gfx.core.init();
     try bfe.gfx.base.init(.{}, "./src/bfe/gfx/shader/");
-    try gfx.init();
-    // try initGfx();
     try bfe.input.init(bfe.gfx.core.getWindow());
     try input.init();
     defer bfe.gfx.core.deinit();
     defer bfe.gfx.base.deinit();
-    defer gfx.deinit();
-    // defer deinitGfx();
     defer bfe.input.deinit();
 
-    // try bfe.gfx.core.addWindowResizeCallback(handleWindowResize);
-    try cam.init(.{.w = 200});
+    try cam.init(.{.w = 10, .x_lim = .{-1000, 1000}, .y_lim = .{-1000, 1000}});
     defer cam.deinit();
     try cam.addCameraEventCallback(&handleCameraEvent);
 
     try bfe.gfx.core.setPointSize(5);
     try bfe.gfx.base.setColor(.PxyCuniF32,1,1,1,1);
 
-    // try initCars();
     try car.init();
     defer car.deinit();
 
@@ -79,7 +72,8 @@ var pause: bool = false;
 fn handleCameraEvent(w: f32, p: [4]f32) void {
     // const w = cam.getParam().w;
     const h = w / bfe.gfx.core.getAspect();
-    bfe.gfx.base.updateProjection(.PxyCuniF32, -w + p[0], w + p[0], -h + p[1], h + p[1]);
+    bfe.gfx.base.updateProjection(.PxyCuniF32, -w + p[0] + p[2], w + p[0] + p[2],
+                                  -h + p[1] + p[3], h + p[1] + p[3]);
 }
 
 //-----------------------------------------------------------------------------//

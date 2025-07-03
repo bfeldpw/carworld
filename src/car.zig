@@ -11,12 +11,14 @@ const gfx = @import("gfx_ext.zig");
 //-----------------------------------------------------------------------------//
 
 pub fn init() !void {
+    try gfx.init();
     try initCars();
     try initGfx();
 }
 
 pub fn deinit() void {
     deinitGfx();
+    gfx.deinit();
 }
 
 //-----------------------------------------------------------------------------//
@@ -36,7 +38,9 @@ pub fn render() !void {
 pub fn update() !void {
     updateTireFn();
     updateForces();
+    applyForces();
     try updateCarDynamics();
+    bfe.gfx.cam.updateHook(cars.items(.body)[0].pos[0], cars.items(.body)[0].pos[1], 0, 0);
     try updateCarGfx();
 }
 
@@ -67,10 +71,11 @@ const BodyDef = struct {
     vel: Vec2d = .{0.0, 0.0},
     pos: Vec2d = .{0.0, 0.0},
     com: Vec2d = .{0.0, 0.0},
-    force: Vec2d = .{0.0, 0.0},
-    torque: f32 = 0.0,
+    force: Vec2d = .{0.0, 0.0}, // Force w.r.t. to COM
+    torque: f32 = 0.0, // Torque w.r.t COM
     angle: f32 = 0.0,
     mass: f32 = 1.0,
+    // Graphics
     obj: *gfx.ObjectDataType,
 };
 
@@ -82,15 +87,21 @@ const SteeringDef = struct {
 };
 
 const TireDef = struct {
+    // Local parameters
     pos: Vec2d = .{0.0, 0.0},
     angle: f32 = 0.0,
-    f_n: f32 = 1.0,
+    // Global parameters
+    f_x: Vec2d = .{0.0, 0.0}, // longitudinal force
+    f_y: Vec2d = .{0.0, 0.0}, // lateral force
+    f_z: f32 = 1.0, // normal force
+    // Misc information
     is_steered: bool = false,
     id: id_type.IdType() = .{},
+    // Graphics
     obj: *gfx.ObjectDataType
 };
 
-const n_cars = 256;
+const n_cars = 1;
 const Vec2d = @Vector(2, f32);
 const Vec4d = @Vector(4, f32);
 const Vec8d = @Vector(8, f32);
@@ -129,7 +140,7 @@ fn initCars() !void {
         car.steering.is_steering = false;
         car.steering.angle = 0.0;
         car.steering.target = 0.0;
-        car.steering.speed = 0.3;
+        car.steering.speed = 0.5;
 
         try cars.append(allocator, car);
     }
@@ -221,28 +232,14 @@ fn updateCarDynamics() !void {
             }
         }
         for (t) |*t_i| {
-            if (t_i.is_steered) t_i.angle = b.angle + s.angle
-            else t_i.angle = b.angle;
+            if (t_i.is_steered) t_i.angle = clampAngle(b.angle + s.angle)
+            else t_i.angle = clampAngle(b.angle);
         }
     }
 }
 
 fn updateCarGfx() !void {
     for (cars.items(.body), cars.items(.tires), cars.items(.steering)) |*b, *ts, s| {
-        // if (b.pos[0] < -50 and b.pos[0] > -60) {
-        //     try gfx.destroyObject(b.obj);
-        // }
-        // if (b.pos[0] < -60 and b.obj.is_free) {
-        //     b.obj = try gfx.createObjectData();
-        //     try gfx.createObjectDataAddSrc(b.obj, &gfx_car, 4);
-
-        //     var v: [8]f32 = .{b.pos[0] - 1, b.pos[1] - 2,
-        //                     b.pos[0] + 1, b.pos[1] - 2,
-        //                     b.pos[0] + 1, b.pos[1] + 2,
-        //                     b.pos[0] - 1, b.pos[1] + 2,
-        //                     };
-        //     gfx.createObjectPolygonGfx(b.obj, &v);
-        // }
         // const b_pos_8 =  Vec8d{b.pos[0], b.pos[1],
         //                        b.pos[0], b.pos[1],
         //                        b.pos[0], b.pos[1],
@@ -297,9 +294,16 @@ fn updateCarGfx() !void {
             }
         }
         {
+            // m1 * v1 = m2 * v2
+            // m1 * v1 / t = m2 * v2 / t
+            // m1 * a1 = m2 * a2
+            // 2000 * 3 * 60
+            // 2000 * mu (1) / 4.
+            b.force = b.vel * @as(Vec2d, @splat(60.0 * b.mass));
+            // std.log.debug("Force to stop = {d:.1}", .{b.force});
             var v: [4]f32 = .{b.pos[0], b.pos[1],
-                              b.pos[0] + scaleDbg(b.mass * b.vel[0]),
-                              b.pos[1] + scaleDbg(b.mass * b.vel[1])};
+                              b.pos[0] + scaleDbg(b.mass * b.vel[0] * 60),
+                              b.pos[1] + scaleDbg(b.mass * b.vel[1] * 60)};
             try gfx.modifyData(b.obj, 1, &v);
         }
     }
@@ -307,25 +311,39 @@ fn updateCarGfx() !void {
 
 fn updateForces() void {
     // const mu = 0.8;
+
+    const k = 10; // 8-15 for passenger cars
     for (cars.items(.body), cars.items(.tires)) |b, t| {
         for (t) |t_i| {
             // const f = mu * t_i.f_n;
-            const f = 0.25 * @sqrt(b.vel[0] * b.vel[0] + b.vel[1] * b.vel[1]) * b.mass;
+            // const f = 0.25 * @sqrt(b.vel[0] * b.vel[0] + b.vel[1] * b.vel[1]) * b.mass;
+
+            // Slip angle
+            const a_vel = clampAngle(std.math.atan2(b.vel[1], b.vel[0]));
+            var a_slip = a_vel - t_i.angle;
+            while (a_slip > 0.5 * std.math.pi) a_slip = std.math.pi - a_slip;
+            while (a_slip < -0.5 * std.math.pi) a_slip = -std.math.pi - a_slip;
+            std.log.debug("VelAngle = {d:.2}", .{std.math.radiansToDegrees(std.math.atan2(b.vel[1], b.vel[0]))});
+            std.log.debug("TireAngle = {d:.2}", .{std.math.radiansToDegrees(t_i.angle)});
+            std.log.debug("SlipAngle = {d:.2}", .{std.math.radiansToDegrees(a_slip)});
+
+            // F_y = C * a_slip = k * F_n * a_slip
+            const f_y = k * t_i.f_z * a_slip;
 
             // Calculate the fraction of the force that is perpendicular to the
             // tires roll direction (side force)
-            const f_t = f * @sin((std.math.atan2(b.vel[1], b.vel[0]) - t_i.angle));
+            // const f_t = f * @sin((std.math.atan2(b.vel[1], b.vel[0]) - t_i.angle));
             {
                 const p0 = transform(b.angle, t_i.pos, b.pos);
 
                 // Direction is 90° (-sin, cos, switch coordinates and negate x)
                 // but the force is oriented agains the cars movement, therefore
                 // the vector has to be negated
-                const p1 = transform(b.angle, t_i.pos, b.pos + Vec2d{scaleDbg(f_t * @sin(t_i.angle)),
-                                                                     scaleDbg(f_t * -@cos(t_i.angle))});
+                const p1 = transform(b.angle, t_i.pos, b.pos + Vec2d{scaleDbg(f_y * @sin(t_i.angle)),
+                                                                     scaleDbg(f_y * -@cos(t_i.angle))});
                 // Debug vector for forces
                 var v_dbg: [4]f32 = .{p0[0], p0[1], p1[0], p1[1]};
-                gfx.createObjectPolygonGfx(t_i.obj, 1, &v_dbg);
+                try gfx.modifyData(t_i.obj, 1, &v_dbg);
             }
         }
     }
@@ -334,19 +352,26 @@ fn updateForces() void {
 fn updateTireFn() void {
     for (cars.items(.body), cars.items(.tires)) |b, *t| {
         for (t) |*t_i| {
-            t_i.f_n = b.mass * 0.25;
+            t_i.f_z = b.mass * 0.25 * gravity;
         }
     }
 }
 
+fn applyForces() void {
+
+}
+
 fn clampAngle(a: f32) f32 {
-    if (a < 0) return a + 2.0 * std.math.pi
-    else if (a > 2.0 * std.math.pi) return a - 2.0 * std.math.pi
+    // if (a < 0) return a + 2.0 * std.math.pi
+    // else if (a > 2.0 * std.math.pi) return a - 2.0 * std.math.pi
+    // else return a;
+    if (a < -std.math.pi) return a + 2.0 * std.math.pi
+    else if (a > std.math.pi) return a - 2.0 * std.math.pi
     else return a;
 }
 
 fn scaleDbg(v: f32) f32 {
-    return v * 0.001;
+    return v * 0.00001;
 }
 
 fn rotate(alpha: f32, v: Vec2d) Vec2d {
