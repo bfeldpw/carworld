@@ -4,6 +4,7 @@ const main = @import("main.zig");
 const c = bfe.gfx.c.c;
 const gfx_cam = bfe.gfx.cam;
 const ipt = bfe.input;
+const car = @import("car.zig");
 
 //-----------------------------------------------------------------------------//
 //   Error Sets / Enums
@@ -47,5 +48,9 @@ fn process() void {
     if (ipt.getKeyState(.key_down)) gfx_cam.moveVelRel(0, -0.5);
     if (ipt.getKeyState(.key_page_up)) gfx_cam.zoomBy(-0.05);
     if (ipt.getKeyState(.key_page_down)) gfx_cam.zoomBy(0.05);
+    if (ipt.getKeyState(.key_w)) car.accelerate();
+    if (ipt.getKeyState(.key_s)) car.deccelerate();
+    if (ipt.getKeyState(.key_a)) car.steerLeft();
+    if (ipt.getKeyState(.key_d)) car.steerRight();
 
 }

@@ -21,7 +21,7 @@ pub fn main() !void {
     defer bfe.gfx.base.deinit();
     defer bfe.input.deinit();
 
-    try cam.init(.{.w = 10, .x_lim = .{-1000, 1000}, .y_lim = .{-1000, 1000}});
+    try cam.init(.{.w = 200, .x_lim = .{-1000, 1000}, .y_lim = .{-1000, 1000}});
     defer cam.deinit();
     try cam.addCameraEventCallback(&handleCameraEvent);
 

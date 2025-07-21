@@ -25,6 +25,30 @@ pub fn deinit() void {
 //   Process
 //-----------------------------------------------------------------------------//
 
+pub fn accelerate() void {
+    const b = &cars.items(.body)[0];
+    const a: f32 = 0.1;
+    acc_ext = Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
+}
+
+pub fn deccelerate() void {
+    const b = &cars.items(.body)[0];
+    const a: f32 = -0.1;
+    acc_ext = Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
+}
+
+pub fn steerLeft() void {
+    cars.items(.steering)[0].target = 0.3;
+    var b = &cars.items(.body)[0];
+    b.angle = clampAngle(b.angle + 0.01);
+}
+
+pub fn steerRight() void {
+    cars.items(.steering)[0].target = -0.3;
+    var b = &cars.items(.body)[0];
+    b.angle = clampAngle(b.angle - 0.01);
+}
+
 pub fn render() !void {
     try gfx.drawBatch(&gfx_car);
     try gfx.drawBatch(&gfx_tires);
@@ -40,7 +64,7 @@ pub fn update() !void {
     updateForces();
     applyForces();
     try updateCarDynamics();
-    bfe.gfx.cam.updateHook(cars.items(.body)[0].pos[0], cars.items(.body)[0].pos[1], 0, 0);
+    // bfe.gfx.cam.updateHook(cars.items(.body)[0].pos[0], cars.items(.body)[0].pos[1], 0, 0);
     try updateCarGfx();
 }
 
@@ -62,12 +86,15 @@ const Car = struct {
     body: BodyDef,
     tires0: [n_tires_max]TireDef,
     tires: [n_tires_max]TireDef,
+    tire_prm_long: TirePrm,
+    tire_prm_lat: TirePrm,
     steering: SteeringDef,
     id: id_type.IdType()
 };
 
 const BodyDef = struct {
     acc: Vec2d = .{0.0, 0.0},
+    vel_p: Vec2d = .{0.0, 0.0}, // Previous velocity
     vel: Vec2d = .{0.0, 0.0},
     pos: Vec2d = .{0.0, 0.0},
     com: Vec2d = .{0.0, 0.0},
@@ -81,7 +108,7 @@ const BodyDef = struct {
 
 const SteeringDef = struct {
     is_steering: bool = false,
-    speed: f32 = 0.1, // rad/s
+    speed: f32 = 0.5, // rad/s
     angle: f32 = 0.0,
     target: f32 = 0.0
 };
@@ -101,6 +128,13 @@ const TireDef = struct {
     obj: *gfx.ObjectDataType
 };
 
+const TirePrm = struct {
+    stiffness: f32 = 0.1,
+    shape: f32 = 2.4,
+    peak: f32 = 1.0,
+    curvature: f32 = 0.97
+};
+
 const n_cars = 1;
 const Vec2d = @Vector(2, f32);
 const Vec4d = @Vector(4, f32);
@@ -108,6 +142,8 @@ const Vec8d = @Vector(8, f32);
 const car_body_segments = 4;
 const car_tire_segments = 4;
 const n_tires_max = 4;
+
+var acc_ext: Vec2d = .{0.0, 0.0};
 
 var gfx_car: gfx.GraphicsDataType = .{};
 var gfx_tires: gfx.GraphicsDataType = .{};
@@ -187,6 +223,7 @@ fn initCars() !void {
     for (cars.items(.body)) |*b| {
         const a: f32 = 0.1 * rand.float(f32);
         b.acc = Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
+        b.vel_p = @splat(0.0);
         b.vel = @splat(0.0);
     }
 }
@@ -206,34 +243,39 @@ fn deinitGfx() void {
 fn updateCarDynamics() !void {
     const dt = @as(Vec2d, @splat(1.0 / 60.0));
     for (cars.items(.body)) |*b| {
+        b.acc = acc_ext;
+        b.vel_p = b.vel;
         b.vel += b.acc * dt;
         b.pos += b.vel * dt;
+        b.acc += (b.vel - b.vel_p) / dt;
     }
+    acc_ext = .{0.0, 0.0};
     for (cars.items(.steering), cars.items(.body), cars.items(.tires)) |*s, *b, *t| {
-        if (rand.float(f32) < 0.01) {
-            s.is_steering = !s.is_steering;
-            s.target = rand.float(f32) * std.math.pi * 0.4 - std.math.pi * 0.2;
-            const a: f32 = 0.1 * rand.float(f32);
-            b.acc = Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
-        }
+        // if (rand.float(f32) < 0.01) {
+        //     s.is_steering = !s.is_steering;
+        //     s.target = rand.float(f32) * std.math.pi * 0.4 - std.math.pi * 0.2;
+        //     const a: f32 = 0.1 * rand.float(f32);
+        //     b.acc = Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
+        // }
         if (s.target < 0) {
             if (s.angle > s.target) {
                 s.angle -= s.speed / 60.0;
             } else {
-                b.angle = clampAngle(b.angle + s.target);
+                // b.angle = clampAngle(b.angle + s.target);
                 s.target = 0;
             }
         } else if (s.target > 0) {
             if (s.angle < s.target) {
                 s.angle += s.speed / 60.0;
             } else {
-                b.angle = clampAngle(b.angle + s.target);
+                // b.angle = clampAngle(b.angle + s.target);
                 s.target = 0;
             }
         }
         for (t) |*t_i| {
             if (t_i.is_steered) t_i.angle = clampAngle(b.angle + s.angle)
             else t_i.angle = clampAngle(b.angle);
+            std.log.debug("TireAngle (dyn) = {d:.2}", .{std.math.radiansToDegrees(t_i.angle)});
         }
     }
 }
@@ -368,6 +410,14 @@ fn clampAngle(a: f32) f32 {
     if (a < -std.math.pi) return a + 2.0 * std.math.pi
     else if (a > std.math.pi) return a - 2.0 * std.math.pi
     else return a;
+}
+
+fn clampAngleInline(a: *f32) void {
+    // if (a < 0) return a + 2.0 * std.math.pi
+    // else if (a > 2.0 * std.math.pi) return a - 2.0 * std.math.pi
+    // else return a;
+    if (a.* < -std.math.pi) a.* += 2.0 * std.math.pi
+    else if (a.* > std.math.pi) a.* -= 2.0 * std.math.pi;
 }
 
 fn scaleDbg(v: f32) f32 {
