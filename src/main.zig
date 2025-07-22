@@ -7,6 +7,14 @@ const stats = bfe.util.stats;
 const car = @import("car.zig");
 const input = @import("input_plugin.zig");
 
+pub const std_options: std.Options = .{
+    .log_scope_levels = &[_]std.log.ScopeLevel{
+        // .{ .scope = .gfx, .level = .debug },
+        .{ .scope = .input, .level = .info },
+        // .{ .scope = .stats, .level = .info },
+    }
+};
+
 pub fn main() !void {
 
     // Init
