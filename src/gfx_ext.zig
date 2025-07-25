@@ -185,6 +185,21 @@ pub fn createObjectPolygonGfx(obj: *ObjectDataType, i_src: u32, v: []f32) void {
     g.ebo_buf.items[obj.src[i_src].i_ebo.r0 + i] = gfx_core.PRI;
 }
 
+pub fn createObjectPointGfx(obj: *ObjectDataType, i_src: u32, v: []f32) void {
+    std.debug.assert(v.len == 2);
+
+    const g = obj.src[i_src].data;
+
+    g.data0_buf.items[obj.src[i_src].i_data.r0] = v[0];
+    g.data_buf.items[obj.src[i_src].i_data.r0] = v[0];
+    g.data0_buf.items[obj.src[i_src].i_data.r0 + 1] = v[1];
+    g.data_buf.items[obj.src[i_src].i_data.r0 + 1] = v[1];
+
+    const i_e: u32 = obj.src[i_src].i_data.r0 / g.attrib_size;
+    g.ebo_buf.items[obj.src[i_src].i_ebo.r0] = i_e;
+    g.ebo_buf.items[obj.src[i_src].i_ebo.r0 + 1] = gfx_core.PRI;
+}
+
 pub fn initBatch(g: *GraphicsDataType, cap_data: u32, cap_ebo: u32) !void {
     // Generate buffers
     g.vao = try gfx_core.genVAO();

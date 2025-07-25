@@ -3,7 +3,6 @@ const bfe = @import("bfe");
 const cam = bfe.gfx.cam;
 const cfg = bfe.cfg;
 const id_type = bfe.util.id_type;
-const stats = bfe.util.stats;
 const car = @import("car.zig");
 const input = @import("input_plugin.zig");
 
@@ -39,8 +38,6 @@ pub fn main() !void {
     try car.init();
     defer car.deinit();
 
-    var perf_car_gfx = try stats.PerFrameTimerBuffered(20).init();
-
     var counter: u64 = 0;
 
     // Run
@@ -49,17 +46,13 @@ pub fn main() !void {
 
         cam.update();
 
-        perf_car_gfx.start();
         if (!pause) try car.update();
-        perf_car_gfx.stop();
         try car.render();
 
         try bfe.gfx.core.finishFrame();
 
         counter += 1;
     }
-
-    std.log.info("Car Gfx update: {d:.2}", .{perf_car_gfx.getAvgAllMs()});
 }
 
 pub fn togglePause() void {
