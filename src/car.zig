@@ -34,29 +34,58 @@ pub fn deinit() void {
 //-----------------------------------------------------------------------------//
 //   Process
 //-----------------------------------------------------------------------------//
+var is_accelerating: bool = false;
+var is_decelerating: bool = false;
+var acc_ext_int: Vec2d = .{0.0, 0.0};
 
 pub fn accelerate() void {
-    const b = &cars.items(.body)[0];
-    const a: f32 = 2.5;
-    acc_ext += Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
+    is_accelerating = true;
 }
 
-pub fn deccelerate() void {
-    const b = &cars.items(.body)[0];
-    const a: f32 = -2.5;
-    acc_ext += Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
+pub fn decelerate() void {
+    is_decelerating = true;
+}
+
+fn accelerateInternal() void {
+    if (is_accelerating) {
+        const b = &cars.items(.body)[0];
+        const a: f32 = 0.05;
+        const a_max: f32 = 1.5;
+        if (getLength2(acc_ext_int) < a_max) {
+            acc_ext_int += Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
+            acc_ext = acc_ext_int;
+        } else {
+            acc_ext = Vec2d{a_max * @cos(b.angle), a_max * @sin(b.angle)};
+        }
+    } else if (!is_decelerating){
+        acc_ext_int *= .{0.8, 0.8};
+        acc_ext = acc_ext_int;
+    }
+}
+
+fn decelerateInternal() void {
+    if (is_decelerating) {
+        const b = &cars.items(.body)[0];
+        const a: f32 = -0.05;
+        const a_max: f32 = -2.0;
+        if (getLength2(acc_ext_int) < -a_max) {
+            acc_ext_int += Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
+            acc_ext = acc_ext_int;
+        } else {
+            acc_ext = Vec2d{a_max * @cos(b.angle), a_max * @sin(b.angle)};
+        }
+    } else if (!is_accelerating) {
+        acc_ext_int *= .{0.8, 0.8};
+        acc_ext = acc_ext_int;
+    }
 }
 
 pub fn steerLeft() void {
     cars.items(.steering)[0].target += 0.01;
-    // var b = &cars.items(.body)[0];
-    // b.angle = clampAngle(b.angle + 0.01);
 }
 
 pub fn steerRight() void {
     cars.items(.steering)[0].target -= 0.01;
-    // var b = &cars.items(.body)[0];
-    // b.angle = clampAngle(b.angle - 0.01);
 }
 
 pub fn render() !void {
@@ -77,14 +106,25 @@ pub fn update() !void {
 
     updateTireFn();
     updateForces();
+    accelerateInternal();
+    decelerateInternal();
+    is_accelerating = false;
+    is_decelerating = false;
     applyForces();
     try updateCarDynamics();
+    std.log.info("a = {d:.2}", .{cars.items(.body)[0].acc});
     clearForces();
 
     pf.phy.stop();
 
-    // bfe.gfx.cam.updateHook(cars.items(.body)[0].pos[0], cars.items(.body)[0].pos[1], 0, 0);
+    if (is_hooked) bfe.gfx.cam.updateHook(cars.items(.body)[0].pos[0], cars.items(.body)[0].pos[1], 0, 0);
     try updateCarGfx();
+}
+
+var is_hooked: bool = true;
+
+pub fn toggleHook() void {
+    is_hooked = !is_hooked;
 }
 
 //-----------------------------------------------------------------------------//
@@ -115,11 +155,14 @@ const BodyDef = struct {
     vel_p: Vec2d = .{0.0, 0.0}, // Previous velocity
     vel: Vec2d = .{0.0, 0.0},
     pos: Vec2d = .{0.0, 0.0},
-    torque: f32 = 0.0, // Torque w.r.t COM
+    torque: f32 = 0.0,          // Torque w.r.t COM
     angle_acc: f32 = 0.0,
     angle_vel: f32 = 0.0,
     angle: f32 = 0.0,
-    com: Vec2d = .{0.0, 0.0},
+    com0: Vec2d = .{0.0, 0.0},
+    com: Vec2d = .{0.0, 0.0},   // center of mass
+    com_vel: Vec2d = .{0.0, 0.0},
+    com_z: f32 = 0.5,           // height above axle plane
     mass: f32 = 1.0,
     // Graphics
     obj: *gfx.ObjectDataType,
@@ -146,17 +189,28 @@ const TireDef = struct {
     obj: *gfx.ObjectDataType
 };
 
-var tire_prm_long: TirePrm = .{};
-var tire_prm_lat: TirePrm = .{};
+var tire_prm: TirePrm = .{};
 
 const TirePrm = struct {
-    stiffness: f32 = 0.1,
-    shape: f32 = 2.4,
-    peak: f32 = 1.0,
-    curvature: f32 = 0.97
+    lat: struct {
+        stiffness: f32 = 0.1,
+        shape: f32 = 2.4,
+        peak: f32 = 1.0,
+        curvature: f32 = 0.97,
+    } = .{},
+    lon: struct {
+        stiffness: f32 = 0.1,
+        shape: f32 = 2.4,
+        peak: f32 = 1.0,
+        curvature: f32 = 0.97,
+    } = .{},
+
+    // 195/55 R16
+    r: f32 = 0.62 / 2.0,
+    w_half: f32 = 0.195 / 2.0,
 };
 
-const n_cars = 16;
+const n_cars = 1;
 const Vec2d = @Vector(2, f32);
 const Vec4d = @Vector(4, f32);
 const Vec8d = @Vector(8, f32);
@@ -193,7 +247,8 @@ fn initCars() !void {
         car.body.acc = Vec2d{a * @cos(car.body.angle), a * @sin(car.body.angle)};
         car.body.vel_p = @splat(0.0);
         car.body.vel = @splat(0.0);
-        car.body.com = .{0.0, 0.1};
+        car.body.com0 = .{0.3, 0.0};
+        car.body.com_z = 0.2;
 
         car.tires[0].pos = .{-1.5, -0.8};
         car.tires[1].pos = .{ 1.5, -0.8};
@@ -237,10 +292,10 @@ fn initCars() !void {
         for (t) |*tire| {
             tire.obj = try gfx.createObjectData();
             try gfx.createObjectDataAddSrc(tire.obj, &gfx_tires, 4);
-            var v1: [8]f32 = .{tire.pos[0] + b.pos[0] - 0.12, tire.pos[1] + b.pos[1] - 0.35,
-                               tire.pos[0] + b.pos[0] + 0.12, tire.pos[1] + b.pos[1] - 0.35,
-                               tire.pos[0] + b.pos[0] + 0.12, tire.pos[1] + b.pos[1] + 0.35,
-                               tire.pos[0] + b.pos[0] - 0.12, tire.pos[1] + b.pos[1] + 0.35,
+            var v1: [8]f32 = .{tire.pos[0] + b.pos[0] - tire_prm.w_half, tire.pos[1] + b.pos[1] - tire_prm.r,
+                               tire.pos[0] + b.pos[0] + tire_prm.w_half, tire.pos[1] + b.pos[1] - tire_prm.r,
+                               tire.pos[0] + b.pos[0] + tire_prm.w_half, tire.pos[1] + b.pos[1] + tire_prm.r,
+                               tire.pos[0] + b.pos[0] - tire_prm.w_half, tire.pos[1] + b.pos[1] + tire_prm.r,
                                };
             gfx.createObjectPolygonGfx(tire.obj, 0, &v1);
 
@@ -283,7 +338,7 @@ fn updateCarDynamics() !void {
 
     // Rough estimation distance to fromt axle *
     // distance to rear axle * mass
-    const Inertia = 1.5 * 1.5 * 2000.0;
+    const Inertia = 1900;
 
     const dt = 1.0 / 60.0;
     const dt2 = @as(Vec2d, @splat(dt));
@@ -294,9 +349,17 @@ fn updateCarDynamics() !void {
         b.pos += b.vel * dt2;
         b.acc += (b.vel - b.vel_p) / dt2;
 
-        b.com = transform(-b.angle, std.math.sin(-b.acc * @as(Vec2d, @splat(0.1))));
+        // "Suspension"
+        const f_acc = b.acc / (@as(Vec2d, @splat(0.2)) * @abs(b.acc) + @as(Vec2d, @splat(1)));
+        const com = transform(-b.angle, -f_acc) * Vec2d{b.com_z, b.com_z * 0.5} + b.com0;// * @as(Vec2d, @splat(b.com_z * 0.2))));
+        const dx = com - b.com;
+        const c = Vec2d{50, 40};
+        const d = Vec2d{5, 5};
+        const acc = c * dx - d * b.com_vel;
+        b.com_vel += acc * dt2;
+        b.com += b.com_vel * dt2;
 
-        b.angle_acc = b.torque / Inertia * dt;
+        b.angle_acc = b.torque / Inertia;
         b.angle_vel += b.angle_acc * dt;
         b.angle += b.angle_vel * dt;
         clampAngleInline(&b.angle);
@@ -335,10 +398,13 @@ fn updateCarGfx() !void {
 
     for (cars.items(.body), cars.items(.tires), cars.items(.steering)) |*b, *ts, s| {
         {
-            const p0 = transformOffset(b.angle, Vec2d{-2, -1} - Vec2d{ 0.1 * b.com[1],  0.1 * b.com[0]}, b.pos);
-            const p1 = transformOffset(b.angle, Vec2d{ 2, -1} - Vec2d{-0.1 * b.com[1], -0.1 * b.com[0]}, b.pos);
-            const p2 = transformOffset(b.angle, Vec2d{ 2,  1} - Vec2d{ 0.1 * b.com[1],  0.1 * b.com[0]}, b.pos);
-            const p3 = transformOffset(b.angle, Vec2d{-2,  1} - Vec2d{-0.1 * b.com[1], -0.1 * b.com[0]}, b.pos);
+            const f = 0.1;
+            const f2 = 0.15;
+            const com = b.com - b.com0;
+            const p0 = transformOffset(b.angle, Vec2d{-2, -1} - Vec2d{ f2 * com[1],  f * com[0]}, b.pos);
+            const p1 = transformOffset(b.angle, Vec2d{ 2, -1} - Vec2d{-f2 * com[1], -f * com[0]}, b.pos);
+            const p2 = transformOffset(b.angle, Vec2d{ 2,  1} - Vec2d{ f2 * com[1],  f * com[0]}, b.pos);
+            const p3 = transformOffset(b.angle, Vec2d{-2,  1} - Vec2d{-f2 * com[1], -f * com[0]}, b.pos);
             var v: [8]f32 = .{p0[0], p0[1],
                               p1[0], p1[1],
                               p2[0], p2[1],
@@ -349,10 +415,10 @@ fn updateCarGfx() !void {
         {
             for (ts) |*t| {
                 if (t.is_steered) {
-                    const t0 = transformOffset(s.angle, Vec2d{-0.35, -0.12}, t.pos);
-                    const t1 = transformOffset(s.angle, Vec2d{ 0.35, -0.12}, t.pos);
-                    const t2 = transformOffset(s.angle, Vec2d{ 0.35,  0.12}, t.pos);
-                    const t3 = transformOffset(s.angle, Vec2d{-0.35,  0.12}, t.pos);
+                    const t0 = transformOffset(s.angle, Vec2d{-tire_prm.r, -tire_prm.w_half}, t.pos);
+                    const t1 = transformOffset(s.angle, Vec2d{ tire_prm.r, -tire_prm.w_half}, t.pos);
+                    const t2 = transformOffset(s.angle, Vec2d{ tire_prm.r,  tire_prm.w_half}, t.pos);
+                    const t3 = transformOffset(s.angle, Vec2d{-tire_prm.r,  tire_prm.w_half}, t.pos);
                     const p0 = transformOffset(b.angle, t0, b.pos);
                     const p1 = transformOffset(b.angle, t1, b.pos);
                     const p2 = transformOffset(b.angle, t2, b.pos);
@@ -364,10 +430,10 @@ fn updateCarGfx() !void {
                                     };
                     try gfx.modifyData(t.obj, 0, &v);
                 } else {
-                    const p0 = transformOffset(b.angle, t.pos + Vec2d{-0.35, -0.12}, b.pos);
-                    const p1 = transformOffset(b.angle, t.pos + Vec2d{ 0.35, -0.12}, b.pos);
-                    const p2 = transformOffset(b.angle, t.pos + Vec2d{ 0.35,  0.12}, b.pos);
-                    const p3 = transformOffset(b.angle, t.pos + Vec2d{-0.35,  0.12}, b.pos);
+                    const p0 = transformOffset(b.angle, t.pos + Vec2d{-tire_prm.r, -tire_prm.w_half}, b.pos);
+                    const p1 = transformOffset(b.angle, t.pos + Vec2d{ tire_prm.r, -tire_prm.w_half}, b.pos);
+                    const p2 = transformOffset(b.angle, t.pos + Vec2d{ tire_prm.r,  tire_prm.w_half}, b.pos);
+                    const p3 = transformOffset(b.angle, t.pos + Vec2d{-tire_prm.r,  tire_prm.w_half}, b.pos);
                     var v: [8]f32 = .{p0[0], p0[1],
                                     p1[0], p1[1],
                                     p2[0], p2[1],
@@ -433,14 +499,18 @@ fn updateForces() void {
 
                 // Pacejka
                 // F = Fz · D · sin(C · arctan(B·slip – E · (B·slip – arctan(B·slip))))
-                const slip = tire_prm_lat.stiffness * a_slip;
+                const slip = tire_prm.lat.stiffness * a_slip;
                 const load = getLength2(t_i.pos) / getLength2(t_i.pos - b.com);
-                t_i.f_y = t_i.f_z * load * tire_prm_lat.peak * @sin(tire_prm_lat.shape * std.math.atan(slip - tire_prm_lat.curvature * slip - std.math.atan(slip)));
+                t_i.f_y = t_i.f_z * load * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * slip - std.math.atan(slip)));
             } else {
-                // b.angle_vel *= 0.1;
-                // b.vel *= .{0.1, 0.1};
+                t_i.f_y = 0.0;
+                b.angle_acc = 0.0;
+                b.angle_vel = 0.0;
+                b.acc = .{0.0, 0.0};
+                b.vel = .{0.0, 0.0};
+                b.force = .{0.0, 0.0};
+                b.torque = 0.0;
             }
-
 
         }
     }
@@ -514,7 +584,7 @@ inline fn cross2(v1: Vec2d, v2: Vec2d) f32 {
 }
 
 inline fn getLength2(v: Vec2d) f32 {
-    return @reduce(.Add, v * v);
+    return @sqrt(@reduce(.Add, v * v));
 }
 
 inline fn getVec2Lateral(lat: f32, angle: f32) Vec2d {

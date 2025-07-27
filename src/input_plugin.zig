@@ -41,6 +41,8 @@ fn process() void {
         }
         if (ipt.getKeyPressEvent(.key_p)) main.togglePause();
     }
+    if (ipt.getKeyPressEvent(.key_h)) car.toggleHook();
+
     // const shift = ipt.getKeyState(.key_shift_left);
     if (ipt.getKeyState(.key_left)) gfx_cam.moveVelRel(-0.5, 0);
     if (ipt.getKeyState(.key_right)) gfx_cam.moveVelRel(0.5, 0);
@@ -49,7 +51,7 @@ fn process() void {
     if (ipt.getKeyState(.key_page_up)) gfx_cam.zoomBy(-0.05);
     if (ipt.getKeyState(.key_page_down)) gfx_cam.zoomBy(0.05);
     if (ipt.getKeyState(.key_w)) car.accelerate();
-    if (ipt.getKeyState(.key_s)) car.deccelerate();
+    if (ipt.getKeyState(.key_s)) car.decelerate();
     if (ipt.getKeyState(.key_a)) car.steerLeft();
     if (ipt.getKeyState(.key_d)) car.steerRight();
 
