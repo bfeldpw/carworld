@@ -500,8 +500,9 @@ fn updateForces() void {
                     v_low = v_abs / 3.0;
                 }
                 const slip = tire_prm.lat.stiffness * a_slip;
-                const load = getLength2(t_i.pos) / getLength2(t_i.pos - b.com);
-                t_i.f_y = t_i.f_z * v_low * load * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * slip - std.math.atan(slip)));
+                // const load = getLength2(t_i.pos) / getLength2(t_i.pos - b.com);
+                // t_i.f_y = t_i.f_z * v_low * load * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * slip - std.math.atan(slip)));
+                t_i.f_y = t_i.f_z * v_low * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * slip - std.math.atan(slip)));
             } else {
                 const C_a = 100.0 * v_abs;
                 t_i.f_y = -C_a * a_slip;
@@ -514,8 +515,13 @@ fn updateForces() void {
 
 fn updateTireFn() void {
     for (cars.items(.body), cars.items(.tires)) |b, *t| {
+        var sum: f32 = 0.0;
         for (t) |*t_i| {
-            t_i.f_z = b.mass * 0.25 * gravity;
+            sum += getLength2(t_i.pos - b.com);
+        }
+        for (t) |*t_i| {
+            t_i.f_z = b.mass * gravity  * getLength2(t_i.pos - b.com) / sum;
+            std.log.debug("load = {d:.2}", .{getLength2(t_i.pos - b.com) / sum});
         }
     }
 }
