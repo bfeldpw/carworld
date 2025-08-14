@@ -112,7 +112,6 @@ pub fn update() !void {
     is_decelerating = false;
     applyForces();
     try updateCarDynamics();
-    std.log.info("a = {d:.2}", .{cars.items(.body)[0].acc});
     clearForces();
 
     pf.phy.stop();
@@ -247,7 +246,7 @@ fn initCars() !void {
         car.body.acc = Vec2d{a * @cos(car.body.angle), a * @sin(car.body.angle)};
         car.body.vel_p = @splat(0.0);
         car.body.vel = @splat(0.0);
-        car.body.com0 = .{0.3, 0.0};
+        car.body.com0 = .{ 0.3, 0.0};
         car.body.com_z = 0.2;
 
         car.tires[0].pos = .{-1.5, -0.8};
@@ -350,11 +349,11 @@ fn updateCarDynamics() !void {
         b.acc += (b.vel - b.vel_p) / dt2;
 
         // "Suspension"
-        const f_acc = b.acc / (@as(Vec2d, @splat(0.2)) * @abs(b.acc) + @as(Vec2d, @splat(1)));
+        const f_acc = b.acc / (Vec2d{2.0, 2.0} * @abs(b.acc) + @as(Vec2d, @splat(1)));
         const com = transform(-b.angle, -f_acc) * Vec2d{b.com_z, b.com_z * 0.5} + b.com0;// * @as(Vec2d, @splat(b.com_z * 0.2))));
         const dx = com - b.com;
         const c = Vec2d{50, 40};
-        const d = Vec2d{5, 5};
+        const d = Vec2d{4, 4};
         const acc = c * dx - d * b.com_vel;
         b.com_vel += acc * dt2;
         b.com += b.com_vel * dt2;
@@ -398,8 +397,8 @@ fn updateCarGfx() !void {
 
     for (cars.items(.body), cars.items(.tires), cars.items(.steering)) |*b, *ts, s| {
         {
-            const f = 0.1;
-            const f2 = 0.15;
+            const f = 0.5;
+            const f2 = 0.75;
             const com = b.com - b.com0;
             const p0 = transformOffset(b.angle, Vec2d{-2, -1} - Vec2d{ f2 * com[1],  f * com[0]}, b.pos);
             const p1 = transformOffset(b.angle, Vec2d{ 2, -1} - Vec2d{-f2 * com[1], -f * com[0]}, b.pos);
@@ -475,43 +474,38 @@ fn updateForces() void {
     // const mu = 0.8;
 
     for (cars.items(.body), cars.items(.tires)) |*b, *t| {
-        for (t) |*t_i| {
-            // const f = mu * t_i.f_n;
-            // const f = 0.25 * @sqrt(b.vel[0] * b.vel[0] + b.vel[1] * b.vel[1]) * b.mass;
 
-            // var f_y: f32 = 0.0;
+        for (t) |*t_i| {
             t_i.f_y = 0.0;
 
-            if (getLength2(b.vel) > 0.01) {
+            const r = transform(b.angle, t_i.pos - b.com);
+            const vel_r = @as(Vec2d, @splat(b.angle_vel)) * Vec2d{-r[1], r[0]};
+            const vel = vel_r + b.vel;
 
-                const r = transform(b.angle, t_i.pos - b.com);
-                const vel_r = @as(Vec2d, @splat(b.angle_vel)) * Vec2d{-r[1], r[0]};
-                const vel = vel_r + b.vel;
+            // Slip angle
+            const a_vel = std.math.atan2(vel[1], vel[0]);
+            var a_slip = a_vel - t_i.angle;
+            while (a_slip > 0.5 * std.math.pi) a_slip = std.math.pi - a_slip;
+            while (a_slip < -0.5 * std.math.pi) a_slip = -std.math.pi - a_slip;
 
-                // Slip angle
-                const a_vel = std.math.atan2(vel[1], vel[0]);
-                var a_slip = a_vel - t_i.angle;
-                while (a_slip > 0.5 * std.math.pi) a_slip = std.math.pi - a_slip;
-                while (a_slip < -0.5 * std.math.pi) a_slip = -std.math.pi - a_slip;
-                a_slip = std.math.radiansToDegrees(a_slip);
-                // std.log.debug("VelAngle = {d:.2}", .{std.math.radiansToDegrees(std.math.atan2(b.vel[1], b.vel[0]))});
-                // std.log.debug("TireAngle = {d:.2}", .{std.math.radiansToDegrees(t_i.angle)});
+            a_slip = std.math.radiansToDegrees(a_slip);
+
+            const v_abs = getLength2(b.vel);
+            if (v_abs > 1.0) {
 
                 // Pacejka
                 // F = Fz · D · sin(C · arctan(B·slip – E · (B·slip – arctan(B·slip))))
+                var v_low: f32 = 1.0;
+                if (v_abs < 3.0) {
+                    v_low = v_abs / 3.0;
+                }
                 const slip = tire_prm.lat.stiffness * a_slip;
                 const load = getLength2(t_i.pos) / getLength2(t_i.pos - b.com);
-                t_i.f_y = t_i.f_z * load * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * slip - std.math.atan(slip)));
+                t_i.f_y = t_i.f_z * v_low * load * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * slip - std.math.atan(slip)));
             } else {
-                t_i.f_y = 0.0;
-                b.angle_acc = 0.0;
-                b.angle_vel = 0.0;
-                b.acc = .{0.0, 0.0};
-                b.vel = .{0.0, 0.0};
-                b.force = .{0.0, 0.0};
-                b.torque = 0.0;
+                const C_a = 100.0 * v_abs;
+                t_i.f_y = -C_a * a_slip;
             }
-
         }
     }
 
