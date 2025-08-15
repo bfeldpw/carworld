@@ -68,7 +68,7 @@ const allocator = gpa.allocator();
 var prng = std.Random.DefaultPrng.init(0);
 const rand = prng.random();
 
-var pause: bool = false;
+var pause: bool = true;
 
 fn handleCameraEvent(w: f32, p: [4]f32) void {
     // const w = cam.getParam().w;
