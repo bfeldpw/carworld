@@ -36,7 +36,19 @@ pub fn deinit() void {
 //-----------------------------------------------------------------------------//
 var is_accelerating: bool = false;
 var is_decelerating: bool = false;
-var acc_ext_int: Vec2d = .{0.0, 0.0};
+
+pub fn increaseThrottle() void {
+    const thr = &cars.items(.engine)[0].throttle;
+    if (thr.* < cars.items(.engine)[0].torque_max) thr.* += 1;
+    log_car.debug("thr = {d:.2}Nm", .{thr.*});
+}
+
+pub fn decreaseThrottle() void {
+    const thr = &cars.items(.engine)[0].throttle;
+    thr.* -= 1;
+    if (thr.* < 0.0) thr.* = 0.0;
+    log_car.debug("thr = {d:.2}Nm", .{thr.*});
+}
 
 pub fn accelerate() void {
     is_accelerating = true;
@@ -44,40 +56,6 @@ pub fn accelerate() void {
 
 pub fn decelerate() void {
     is_decelerating = true;
-}
-
-fn accelerateInternal() void {
-    if (is_accelerating) {
-        const b = &cars.items(.body)[0];
-        const a: f32 = 0.05;
-        const a_max: f32 = 1.5;
-        if (getLength2(acc_ext_int) < a_max) {
-            acc_ext_int += Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
-            acc_ext = acc_ext_int;
-        } else {
-            acc_ext = Vec2d{a_max * @cos(b.angle), a_max * @sin(b.angle)};
-        }
-    } else if (!is_decelerating){
-        acc_ext_int *= .{0.8, 0.8};
-        acc_ext = acc_ext_int;
-    }
-}
-
-fn decelerateInternal() void {
-    if (is_decelerating) {
-        const b = &cars.items(.body)[0];
-        const a: f32 = -0.05;
-        const a_max: f32 = -2.0;
-        if (getLength2(acc_ext_int) < -a_max) {
-            acc_ext_int += Vec2d{a * @cos(b.angle), a * @sin(b.angle)};
-            acc_ext = acc_ext_int;
-        } else {
-            acc_ext = Vec2d{a_max * @cos(b.angle), a_max * @sin(b.angle)};
-        }
-    } else if (!is_accelerating) {
-        acc_ext_int *= .{0.8, 0.8};
-        acc_ext = acc_ext_int;
-    }
 }
 
 pub fn steerLeft() void {
@@ -105,11 +83,9 @@ pub fn update() !void {
     pf.phy.start();
 
     updateTireFn();
-    accelerateInternal();
-    decelerateInternal();
+    updateForces();
     is_accelerating = false;
     is_decelerating = false;
-    updateForces();
     applyForces();
     try updateCarDynamics();
     clearForces();
@@ -124,6 +100,7 @@ var is_hooked: bool = false;
 
 pub fn toggleHook() void {
     is_hooked = !is_hooked;
+    if (is_hooked) bfe.gfx.cam.resetPosition();
 }
 
 //-----------------------------------------------------------------------------//
@@ -144,7 +121,8 @@ const gravity = 9.81;
 const Car = struct {
     body: BodyDef,
     tires: [n_tires_max]TireDef,
-    steering: SteeringDef,
+    steering: SteeringDef = .{},
+    engine: EngineDef = .{},
     id: id_type.IdType()
 };
 
@@ -165,6 +143,11 @@ const BodyDef = struct {
     mass: f32 = 1.0,
     // Graphics
     obj: *gfx.ObjectDataType,
+};
+
+const EngineDef = struct {
+    torque_max: f32 = 300.0, // Nm
+    throttle: f32 = 0.0
 };
 
 const SteeringDef = struct {
@@ -193,14 +176,14 @@ var tire_prm: TirePrm = .{};
 
 const TirePrm = struct {
     lat: struct {
-        stiffness: f32 = 0.1,
-        shape: f32 = 2.4,
+        stiffness: f32 = 10.0,
+        shape: f32 = 1.3,
         peak: f32 = 1.0,
         curvature: f32 = 0.97,
     } = .{},
     lon: struct {
         stiffness: f32 = 10.0,
-        shape: f32 = 2.4,
+        shape: f32 = 1.65,
         peak: f32 = 1.0,
         curvature: f32 = 0.97,
     } = .{},
@@ -250,6 +233,9 @@ fn initCars() !void {
         car.body.com0 = .{ 0.3, 0.0};
         car.body.com_z = 0.2;
 
+        car.engine.throttle = 0.0;
+        car.engine.torque_max = 300.0;
+
         car.tires[0].pos = .{-1.5, -0.8};
         car.tires[1].pos = .{ 1.5, -0.8};
         car.tires[2].pos = .{ 1.5,  0.8};
@@ -258,14 +244,21 @@ fn initCars() !void {
         car.tires[1].is_steered = true;
         car.tires[2].is_steered = true;
         car.tires[3].is_steered = false;
+        // FWD
         // car.tires[0].is_powered = false;
         // car.tires[1].is_powered = true;
         // car.tires[2].is_powered = true;
         // car.tires[3].is_powered = false;
+        // RWD
         car.tires[0].is_powered = true;
         car.tires[1].is_powered = false;
         car.tires[2].is_powered = false;
         car.tires[3].is_powered = true;
+        // AWD
+        // car.tires[0].is_powered = true;
+        // car.tires[1].is_powered = true;
+        // car.tires[2].is_powered = true;
+        // car.tires[3].is_powered = true;
 
         car.tires[0].id.init();
         car.tires[1].id.init();
@@ -273,7 +266,7 @@ fn initCars() !void {
         car.tires[3].id.init();
 
         car.steering.is_steering = false;
-        car.steering.angle = 0.25 * std.math.pi;
+        car.steering.angle = 0.0;
         car.steering.target = 0.0;
         car.steering.speed = 0.5;
 
@@ -321,8 +314,6 @@ fn initCars() !void {
             gfx.createObjectPointGfx(b.obj, 2, &com_dbg);
         }
     }
-    // for (cars.items(.body)) |*b| {
-    // }
 }
 
 fn initGfx() !void {
@@ -379,23 +370,18 @@ fn updateCarDynamics() !void {
             if (s.angle > s.target) {
                 s.angle -= s.speed / 60.0;
             } else {
-                // b.angle = clampAngle(b.angle + s.target);
-                // s.target = 0;
                 s.angle = s.target;
             }
         } else if (s.target > 0) {
             if (s.angle < s.target) {
                 s.angle += s.speed / 60.0;
             } else {
-                // b.angle = clampAngle(b.angle + s.target);
-                // s.target = 0;
                 s.angle = s.target;
             }
         }
         for (t) |*t_i| {
             if (t_i.is_steered) t_i.angle = clampAngle(b.angle + s.angle)
             else t_i.angle = clampAngle(b.angle);
-            // std.log.debug("TireAngle (dyn) = {d:.2}", .{std.math.radiansToDegrees(t_i.angle)});
         }
     }
 
@@ -484,32 +470,50 @@ fn updateForces() void {
     pf.phy_tire.start();
     // const mu = 0.8;
 
-    for (cars.items(.body), cars.items(.tires)) |*b, *t| {
+    for (cars.items(.body), cars.items(.engine), cars.items(.tires)) |*b, e, *t| {
 
         for (t) |*t_i| {
             t_i.f_y = 0.0;
 
+            // Calculate velocity of single tire, including the bodies angular velocity
             const r = transform(b.angle, t_i.pos - b.com);
             const vel_r = @as(Vec2d, @splat(b.angle_vel)) * Vec2d{-r[1], r[0]};
             const vel = vel_r + b.vel;
 
-            // Slip angle
+            // Calculate the slip angle
             const a_vel = std.math.atan2(vel[1], vel[0]);
             var a_slip = a_vel - t_i.angle;
-            while (a_slip > 0.5 * std.math.pi) a_slip = std.math.pi - a_slip;
-            while (a_slip < -0.5 * std.math.pi) a_slip = -std.math.pi - a_slip;
 
             const v_abs = getLength2(vel);
             const v_lon = v_abs * @cos(a_slip);
-            std.log.debug("v_lon = {d:.2}", .{v_lon * 3.6});
+
+            while (a_slip > 0.5 * std.math.pi) a_slip = std.math.pi - a_slip;
+            while (a_slip < -0.5 * std.math.pi) a_slip = -std.math.pi - a_slip;
+            // clampAngleInline(&a_slip);
 
             a_slip = std.math.radiansToDegrees(a_slip);
 
-            // const r_slip = @max((v_lon - getLength2(acc_ext)) / (getLength2(acc_ext) + 0.2), 0.0);
-            // const r_slip = @max((v_lon - 1.0) / 1.0, 0.0);
-            const r_slip = (v_lon - 20.0) / 20.0;
-            // const r_slip = v_lon * 0.0001 + 99;
+            var v_thr: f32 = 0.0;
+            var r_slip: f32 = 0.0;
+            var dir: f32 = 1.0;
+            if (is_accelerating or is_decelerating) v_thr = (e.throttle / e.torque_max * 0.1 + 1) * v_lon;
+            if (v_lon > 0.1) {
+                if (is_accelerating and v_thr > 0.0) r_slip = @min(100.0, (v_thr / v_lon - 1) * 100)
+                else r_slip = v_abs / v_lon - 1;
+                // else r_slip = -100.0;
+            } else if (v_lon >= 0.0) {
+                if (is_accelerating) r_slip = 0.1;
+            } else {
+                r_slip = -100.0;//v_abs / v_lon - 1;
+                dir = -1.0;
+            }
+            log_car.debug("e_thr = {d:.2}", .{e.throttle});
+            log_car.debug("v_thr = {d:.2}", .{v_thr});
+            log_car.debug("v_abs = {d:.2}", .{v_abs});
+            log_car.debug("v_lon = {d:.2}", .{v_lon});
+            log_car.debug("r_slip = {d:.2}", .{r_slip});
 
+            const load = 1.0;// getLength2(t_i.pos) / getLength2(t_i.pos - b.com);
             if (v_abs > 1.0) {
 
                 // Pacejka
@@ -519,9 +523,8 @@ fn updateForces() void {
                     v_low = v_abs / 3.0;
                 }
                 const slip = tire_prm.lat.stiffness * a_slip;
-                // const load = getLength2(t_i.pos) / getLength2(t_i.pos - b.com);
                 // t_i.f_y = t_i.f_z * v_low * load * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * slip - std.math.atan(slip)));
-                t_i.f_y = t_i.f_z * v_low * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * slip - std.math.atan(slip)));
+                t_i.f_y = -t_i.f_z * v_low * load * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * (slip - std.math.atan(slip))));
             } else {
                 const C_a = 100.0 * v_abs;
                 t_i.f_y = -C_a * a_slip;
@@ -529,12 +532,12 @@ fn updateForces() void {
             var power: f32 = 0.0;
             // if (t_i.is_powered) power = getLength2(acc_ext) * 1000;
             if (t_i.is_powered) {
-                power = t_i.f_z * tire_prm.lon.peak * @sin(tire_prm.lon.shape * std.math.atan(r_slip - tire_prm.lon.curvature * r_slip - std.math.atan(r_slip)));
+                power = dir * t_i.f_z * load * tire_prm.lon.peak * @sin(tire_prm.lon.shape * std.math.atan(r_slip - tire_prm.lon.curvature * (r_slip - std.math.atan(r_slip))));
             }
             if (v_abs > 0.01) {
                 t_i.f_x = -t_i.f_z * 0.01 + power;
             } else {
-                t_i.f_x = 0.0 + power;
+                t_i.f_x = power;
             }
 
             const t_max = t_i.f_z;

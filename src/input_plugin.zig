@@ -50,6 +50,8 @@ fn process() void {
     if (ipt.getKeyState(.key_down)) gfx_cam.moveVelRel(0, -0.5);
     if (ipt.getKeyState(.key_page_up)) gfx_cam.zoomBy(-0.05);
     if (ipt.getKeyState(.key_page_down)) gfx_cam.zoomBy(0.05);
+    if (ipt.getKeyState(.key_e)) car.increaseThrottle();
+    if (ipt.getKeyState(.key_q)) car.decreaseThrottle();
     if (ipt.getKeyState(.key_w)) car.accelerate();
     if (ipt.getKeyState(.key_s)) car.decelerate();
     if (ipt.getKeyState(.key_a)) car.steerLeft();
