@@ -161,9 +161,10 @@ const TireDef = struct {
     // Local parameters
     pos: Vec2d = .{0.0, 0.0},
     angle: f32 = 0.0,
-    f_x: f32 = 0.0, // longitudinal force
-    f_y: f32 = 0.0, // lateral force
-    f_z: f32 = 1.0, // normal force
+    f_x: f32 = 0.0,  // longitudinal force
+    f_y: f32 = 0.0,  // lateral force
+    f_y0: f32 = 0.0, // lateral force of previous frame
+    f_z: f32 = 1.0,  // normal force
     // Misc information
     is_steered: bool = false,
     is_powered: bool = false,
@@ -506,8 +507,8 @@ fn updateForces() void {
             var dir: f32 = 1.0;
             if (is_accelerating or is_decelerating) v_thr = (e.throttle / e.torque_max * 0.1 + 1) * v_lon;
             if (v_lon > 0.1) {
-                if (is_accelerating and v_thr > 0.0) r_slip = @min(100.0, (v_thr / v_lon - 1) * 100)
-                else r_slip = v_abs / v_lon - 1; // This is just a hack, adapt
+                if (is_accelerating and v_thr > 0.0) r_slip = @min(100.0, (v_thr / v_lon - 1) * 100);
+                // else r_slip = v_abs / v_lon - 1; // This is just a hack, adapt
                 // else r_slip = -100.0;
             } else if (v_lon >= 0.0) {
                 if (is_accelerating) r_slip = 0.1;
@@ -521,54 +522,56 @@ fn updateForces() void {
             // log_car.debug("v_lon = {d:.2}", .{v_lon});
             // log_car.debug("r_slip = {d:.2}", .{r_slip});
 
-            const load = 1.0;// getLength2(t_i.pos) / getLength2(t_i.pos - b.com);
-
             // Calculate lateral forces
             // ---
-            // Switch between simplified and Pacejka model, based on absolute velocity
-            // th_model_switch: Threshold for switching models
-            const th_model_switch = 1.0;
-            if (v_abs > th_model_switch) {
+            //   Calculate Pacejka model
+            //   ---
+            //   F = Fz · D · sin(C · arctan(B·slip – E · (B·slip – arctan(B·slip))))
+            const slip = tire_prm.lat.stiffness * a_slip;
+            const model_paj = -t_i.f_z * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * (slip - std.math.atan(slip))));
 
-                // Pacejka
-                // F = Fz · D · sin(C · arctan(B·slip – E · (B·slip – arctan(B·slip))))
-                // ---
-                var v_low: f32 = 1.0;
-                // const v_low = 1.0;
-                if (v_abs < 3.0) {
-                    v_low = v_abs / 3.0;
-                }
-                const slip = tire_prm.lat.stiffness * a_slip;
-                // t_i.f_y = t_i.f_z * v_low * load * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * slip - std.math.atan(slip)));
-                t_i.f_y = -t_i.f_z * v_low * load * tire_prm.lat.peak * @sin(tire_prm.lat.shape * std.math.atan(slip - tire_prm.lat.curvature * (slip - std.math.atan(slip))));
-            } else { // if (v_abs <= 1.0m/s)
+            // Calculate simplified (linear) model
+            // ---
+            //   In the simplified model, the tire force is linear to the slip angle
+            //   It is weighed by the maximum tire load and normalized by the maximum
+            //   slip angle.
+            //   Factoring in the absolut velocity makes sure, that no forces are
+            //   applied at v = 0, and only minimal forces act, when speed is low,
+            //   to reduce jittering.
+            const c_a = -t_i.f_z * v_abs;
+            const a_slip_max_inv = 1.0 / 90.0;
+            const model_lin = c_a * a_slip * a_slip_max_inv;
 
-                // Simplified model
-                // ---
-                // In the simplified model, the tire force is linear to the slip angle
-                // It is weighed by the maximum tire load and normalized by the maximum
-                // slip angle.
-                // Factoring in the absolut velocity makes sure, that no forces are
-                // applied at v = 0, and only minimal forces act, when speed is low,
-                // to reduce jittering.
-                const c_a = -t_i.f_z * v_abs;
-                const a_slip_max_inv = 1.0 / 90.0;
-                t_i.f_y = c_a * a_slip * a_slip_max_inv;
+            // Threshold for piecewise linear combination of simplified and Pacejka model
+            const th_model_0 = 2.0;
+            const th_model_1 = 5.0;
+
+            const weight = (v_abs - th_model_0) / (th_model_1 - th_model_0);
+            if (v_abs <= th_model_0) t_i.f_y = model_lin
+            else if (v_abs >= th_model_1) t_i.f_y = model_paj
+            else t_i.f_y = (1 - weight) * model_lin + weight * model_paj;
+
+            // Remove outliers (force peaks)
+            if (t_i.f_y0 > 0.0 and @abs(t_i.f_y) - @abs(t_i.f_y0) > t_i.f_z) {
+                t_i.f_y = t_i.f_y0;
             }
+
+            t_i.f_y0 = t_i.f_y;
 
             // Calculate longitudinal forces
             // ---
             var power: f32 = 0.0;
             // if (t_i.is_powered) power = getLength2(acc_ext) * 1000;
             if (t_i.is_powered) {
-                power = dir * t_i.f_z * load * tire_prm.lon.peak * @sin(tire_prm.lon.shape * std.math.atan(r_slip - tire_prm.lon.curvature * (r_slip - std.math.atan(r_slip))));
+                power = dir * t_i.f_z * tire_prm.lon.peak * @sin(tire_prm.lon.shape * std.math.atan(r_slip - tire_prm.lon.curvature * (r_slip - std.math.atan(r_slip))));
             }
             if (v_abs > 0.01) {
-                t_i.f_x = -t_i.f_z * 0.01 + power;
+                t_i.f_x = t_i.f_z * 0.01 + power;
             } else {
                 t_i.f_x = power;
             }
 
+            // Lateral / Longitudinal combination
             const t_max = t_i.f_z;
             t_i.f_x = @min(t_i.f_x, t_max);
             t_i.f_y = t_i.f_y * @sqrt(1 - (t_i.f_x / t_max) * (t_i.f_x / t_max));
