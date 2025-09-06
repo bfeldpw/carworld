@@ -40,6 +40,7 @@ fn process() void {
             gfx_cam.zoomToWidth(150.0);
         }
         if (ipt.getKeyPressEvent(.key_p)) main.togglePause();
+        if (ipt.getKeyPressEvent(.key_e)) bfe.gfx.gui.toggleEditMode();
     }
     if (ipt.getKeyPressEvent(.key_h)) car.toggleHook();
 
