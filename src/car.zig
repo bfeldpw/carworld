@@ -622,7 +622,8 @@ fn updateForces() void {
                 r_slip = -100.0;//v_abs / v_lon - 1;
                 dir = -1.0;
             }
-            buf_tire_slip_r[count].add(r_slip);
+            if (t_i.is_powered) buf_tire_slip_r[count].add(r_slip)
+            else buf_tire_slip_r[count].add(0.0);
             count += 1;
             // log_car.debug("e_thr = {d:.2}", .{e.throttle});
             // log_car.debug("v_thr = {d:.2}", .{v_thr});
