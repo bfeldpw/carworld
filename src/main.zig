@@ -16,6 +16,12 @@ pub const std_options: std.Options = .{
 };
 
 pub fn main() !void {
+    var gpa = if (cfg.debug_allocator) std.heap.GeneralPurposeAllocator(.{ .verbose_log = true }){} else std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked == .leak) std.log.err("Memory leaked in GeneralPurposeAllocator", .{});
+    }
 
     var arena_allocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_allocator.deinit();
@@ -44,23 +50,26 @@ pub fn main() !void {
 
     try setupGui();
 
-    try car.init();
-    defer car.deinit();
+    try car.init(allocator);
+    defer car.deinit(allocator);
 
+    var pf_gui: bfe.util.stats.PerFrameTimerBuffered(20) = bfe.util.stats.PerFrameTimerBuffered(20).init();
     var counter: u64 = 0;
 
     // Run
     while (bfe.gfx.core.isWindowOpen()) {
         bfe.input.process();
-
         cam.update();
 
         if (!pause) try car.update();
+
         try car.render();
         const wgt_lg = try gui.getTextWidget("wgt_lg");
+        // wgt_lg.text = try car.getCarData1(arena, 0) ++
+        pf_gui.start();
         wgt_lg.text = try car.getCarData(arena, 0);
+        pf_gui.stop();
         try bfe.gfx.gui.update();
-
         try bfe.gfx.core.finishFrame();
 
         if (arena_allocator.reset(.retain_capacity) == false) {
@@ -69,8 +78,7 @@ pub fn main() !void {
         counter += 1;
     }
 
-    const leaked = gpa.deinit();
-    if (leaked == .leak) std.log.err("Memory leaked in GeneralPurposeAllocator", .{});
+    std.log.info("Gui update   {d:.4}ms", .{pf_gui.getAvgAllMs()});
 }
 
 pub fn togglePause() void {
@@ -80,9 +88,6 @@ pub fn togglePause() void {
 //-----------------------------------------------------------------------------//
 //   Internal
 //-----------------------------------------------------------------------------//
-var gpa = if (cfg.debug_allocator) std.heap.GeneralPurposeAllocator(.{ .verbose_log = true }){} else std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa.allocator();
-
 var prng = std.Random.DefaultPrng.init(0);
 const rand = prng.random();
 
