@@ -7,8 +7,13 @@ const ipt = bfe.input;
 const car = @import("car.zig");
 
 //-----------------------------------------------------------------------------//
-//   Error Sets / Enums
+//   Error Sets / Enums / Types / Structs
 //-----------------------------------------------------------------------------//
+//
+const Controls = struct {
+    steer_id: u32,
+    steer_axis: u32,
+};
 
 //-----------------------------------------------------------------------------//
 //   Init / DeInit
@@ -43,6 +48,7 @@ fn process() void {
         if (ipt.getKeyPressEvent(.key_e)) bfe.gfx.gui.toggleEditMode();
     }
     if (ipt.getKeyPressEvent(.key_h)) car.toggleHook();
+    if (ipt.getKeyPressEvent(.key_t)) car.rotateDriveTrainLayout();
 
     // const shift = ipt.getKeyState(.key_shift_left);
     if (ipt.getKeyState(.key_left)) gfx_cam.moveVelRel(-0.5, 0);

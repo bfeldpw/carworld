@@ -10,7 +10,7 @@ const input = @import("input_plugin.zig");
 pub const std_options: std.Options = .{
     .log_scope_levels = &[_]std.log.ScopeLevel{
         // .{ .scope = .gfx, .level = .debug },
-        .{ .scope = .input, .level = .info },
+        // .{ .scope = .input, .level = .info },
         // .{ .scope = .stats, .level = .info },
     }
 };
@@ -64,12 +64,15 @@ pub fn main() !void {
         if (!pause) try car.update();
 
         try car.render();
-        const wgt_lg = try gui.getTextWidget("wgt_lg");
-        // wgt_lg.text = try car.getCarData1(arena, 0) ++
+
         pf_gui.start();
-        wgt_lg.text = try car.getCarData(arena, 0);
+        
+            const wgt_cd = try gui.getTextWidget("wgt_cd");
+            wgt_cd.text = try car.getCarData(arena, 0);
+            try bfe.gfx.gui.update();
+
         pf_gui.stop();
-        try bfe.gfx.gui.update();
+
         try bfe.gfx.core.finishFrame();
 
         if (arena_allocator.reset(.retain_capacity) == false) {
@@ -101,28 +104,127 @@ fn handleCameraEvent(w: f32, p: [4]f32) void {
 }
 
 fn setupGui() !void {
-    try gui.addColor("lg_bg", .{0.1, 0.3, 0.1, 0.6});
+    try gui.addColor("bg", .{0.1, 0.3, 0.1, 0.6});
     try gui.addColor("light_blue", .{0.4, 0.8, 1.0, 1.0});
     try gui.addColor("light_green", .{0.6, 1.0, 0.6, 1.0});
     try gui.addColor("orange", .{1.0, 0.7, 0.0, 1.0});
-    const ovl_lg: gui.Overlay = .{
-        .col = gui.getColor("lg_bg"),
+
+    const ovl_car_data: gui.Overlay = .{
+        .col = gui.getColor("bg"),
         .title = .{.text = "Car Data",
                    .font_size = 24,
                    .separator_thickness = 3.0},
         .width = 400.0,
         .align_h = .left,
         .align_v = .top,
+        .is_enabled = true,
         // .resize_mode = .auto_vertical
     };
-    const wgt_lg: gui.TextWidget = .{
+    const wgt_car_data: gui.TextWidget = .{
         .text = "invalid",
         .font_size = 20,
         .col = gui.getColor("light_green"),
     };
-    try gui.addOverlay("ovl_lg", ovl_lg);
-    try gui.addTextWidget("ovl_lg", "wgt_lg", wgt_lg);
+    try gui.addOverlay("ovl_cd", ovl_car_data);
+    try gui.addTextWidget("ovl_cd", "wgt_cd", wgt_car_data);
+
+    const ovl_input: gui.Overlay = .{
+        .col = gui.getColor("bg"),
+        .title = .{.text = "Input",
+                   .font_size = 24,
+                   .separator_thickness = 3.0},
+        .width = 400.0,
+        .align_h = .right,
+        .align_v = .top,
+        .is_enabled = true,
+    };
+    const wgt_input: gui.TextWidget = .{
+        .text = "no controllers",
+        .font_size = 20,
+        .col = gui.getColor("light_green"),
+    };
+    try gui.addOverlay("ovl_input", ovl_input);
+    try gui.addTextWidget("ovl_input", "wgt_input", wgt_input);
 }
+
+// fn formatInputData(a: std.mem.Allocator) ![]u8 {
+    // const str1 = try std.fmt.allocPrint(
+    //     a,
+    //     "GENERIC\n" ++
+    //     "  Velocity = {d:.0} km/h\n" ++
+    //     "  Drive train layout: {s}\n" ++
+    //     "\n" ++
+    //     "TIRE MODEL\n" ++
+    //     "  Linear   = {d:.0} %\n" ++
+    //     "  Pacejka  = {d:.0} %\n" ++
+    //     "\n" ++
+    //     "TIRE DATA\n" ++
+    //     "  slip angle [degree]   {d:5.1} {d:5.1}\n" ++
+    //     "                        {d:5.1} {d:5.1}\n" ++
+    //     "\n" ++
+    //     "  slip ratio [%]        {d:4.0} {d:4.0}\n" ++
+    //     "                        {d:4.0} {d:4.0}\n" ++
+    //     "\n" ++
+    //     "  load [kN]             {d:4.1} {d:4.1}\n" ++
+    //     "                        {d:4.1} {d:4.1}\n" ++
+    //     "\n" ++
+    //     "  force lat. [kN]       {d:4.1} {d:4.1}\n" ++
+    //     "                        {d:4.1} {d:4.1}\n" ++
+    //     "\n" ++
+    //     "  force lon. [kN]       {d:4.1} {d:4.1}\n" ++
+    //     "                        {d:4.1} {d:4.1}\n" ++
+    //     "\n" ++
+    //     "  velocity lon. [km/h]  {d:4.1} {d:4.1}\n" ++
+    //     "                        {d:4.1} {d:4.1}\n" ++
+    //     "\n" ++
+    //     "  velocity tan. [km/h]  {d:4.1} {d:4.1}\n" ++
+    //     "                        {d:4.1} {d:4.1}\n"
+    //         ,
+    //     .{getLength2(cars.items(.body)[idx].vel) * 3.6,
+    //       mapDriveTrainLayout(cars.items(.drive_train)[0].layout),
+    //       buf_tire_model_lin.getAvg(),
+    //       buf_tire_model_paj.getAvg(),
+    //       buf_tire_slip_a[2].getAvg(),
+    //       buf_tire_slip_a[1].getAvg(),
+    //       buf_tire_slip_a[3].getAvg(),
+    //       buf_tire_slip_a[0].getAvg(),
+    //       buf_tire_slip_r[2].getAvg(),
+    //       buf_tire_slip_r[1].getAvg(),
+    //       buf_tire_slip_r[3].getAvg(),
+    //       buf_tire_slip_r[0].getAvg(),
+    //       buf_tire_load[2].getAvg() * 0.001,
+    //       buf_tire_load[1].getAvg() * 0.001,
+    //       buf_tire_load[3].getAvg() * 0.001,
+    //       buf_tire_load[0].getAvg() * 0.001,
+    //       buf_tire_fy[2].getAvg() * 0.001,
+    //       buf_tire_fy[1].getAvg() * 0.001,
+    //       buf_tire_fy[3].getAvg() * 0.001,
+    //       buf_tire_fy[0].getAvg() * 0.001,
+    //       buf_tire_fx[2].getAvg() * 0.001,
+    //       buf_tire_fx[1].getAvg() * 0.001,
+    //       buf_tire_fx[3].getAvg() * 0.001,
+    //       buf_tire_fx[0].getAvg() * 0.001,
+    //       buf_tire_lon[2].getAvg() * 3.6,
+    //       buf_tire_lon[1].getAvg() * 3.6,
+    //       buf_tire_lon[3].getAvg() * 3.6,
+    //       buf_tire_lon[0].getAvg() * 3.6,
+    //       buf_wheel_vel[2].getAvg() * 3.6,
+    //       buf_wheel_vel[1].getAvg() * 3.6,
+    //       buf_wheel_vel[3].getAvg() * 3.6,
+    //       buf_wheel_vel[0].getAvg() * 3.6}
+    // );
+
+    // const str2 = try std.fmt.allocPrint(
+    //     a,
+    //     "\nAERODYNAMICS\n" ++
+    //     "    drag (front) = {d:.0} N\n" ++
+    //     "    drag (side)  = {d:.0} N\n"
+    //         ,
+    //     .{buf_drag[0].getAvg(),
+    //       buf_drag[1].getAvg()}
+    // );
+    // return try std.fmt.allocPrint(a, "{s}{s}", .{str1, str2});
+// }
 
 //-----------------------------------------------------------------------------//
 //   Tests

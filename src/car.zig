@@ -49,6 +49,7 @@ pub fn getCarData(a: std.mem.Allocator, idx: usize) ![]u8 {
         a,
         "GENERIC\n" ++
         "  Velocity = {d:.0} km/h\n" ++
+        "  Drive train layout: {s}\n" ++
         "\n" ++
         "TIRE MODEL\n" ++
         "  Linear   = {d:.0} %\n" ++
@@ -77,6 +78,7 @@ pub fn getCarData(a: std.mem.Allocator, idx: usize) ![]u8 {
         "                        {d:4.1} {d:4.1}\n"
             ,
         .{getLength2(cars.items(.body)[idx].vel) * 3.6,
+          mapDriveTrainLayout(cars.items(.drive_train)[0].layout),
           buf_tire_model_lin.getAvg(),
           buf_tire_model_paj.getAvg(),
           buf_tire_slip_a[2].getAvg(),
@@ -124,6 +126,15 @@ pub fn getCarData(a: std.mem.Allocator, idx: usize) ![]u8 {
 //-----------------------------------------------------------------------------//
 //   Process
 //-----------------------------------------------------------------------------//
+pub fn rotateDriveTrainLayout() void {
+    const d = &cars.items(.drive_train)[0].layout;
+    var d_i = @intFromEnum(d.*) + 1;
+    // if (e_i == @typeInfo(DriveTrainLayoutE).Enum.fields.len) e_i = 0;
+    if (d_i == 3) d_i = 0;
+
+    setupDriveTrainLayout(0, @enumFromInt(d_i));
+}
+
 var is_accelerating: bool = false;
 var is_decelerating: bool = false;
 var is_handbraking: bool = false;
@@ -213,20 +224,69 @@ pub fn toggleHook() void {
 //-----------------------------------------------------------------------------//
 const log_car = std.log.scoped(.gfx_car);
 
-// var gpa = if (cfg.debug_allocator) std.heap.GeneralPurposeAllocator(.{ .verbose_log = true }){} else std.heap.GeneralPurposeAllocator(.{}){};
-// const allocator = gpa.allocator();
+// Debug data buffers
+var buf_drag: [2]buf.Buffer(f32, fps_main) = .{
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init()
+};
+var buf_wheel_vel: [4]buf.Buffer(f32, fps_main) = .{
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init()
+};
+var buf_tire_load: [4]buf.Buffer(f32, fps_main) = .{
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init()
+};
+var buf_tire_fx: [4]buf.Buffer(f32, fps_main) = .{
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init()
+};
+var buf_tire_fy: [4]buf.Buffer(f32, fps_main) = .{
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init()
+};
+var buf_tire_lon: [4]buf.Buffer(f32, fps_main) = .{
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init()
+};
+var buf_tire_slip_a: [4]buf.Buffer(f32, fps_main) = .{
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init()
+};
+var buf_tire_slip_r: [4]buf.Buffer(f32, fps_main) = .{
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init(),
+    buf.Buffer(f32, fps_main).init()
+};
+var buf_tire_model_lin: buf.Buffer(f32, fps_main) = buf.Buffer(f32, fps_main).init();
+var buf_tire_model_paj: buf.Buffer(f32, fps_main) = buf.Buffer(f32, fps_main).init();
+
 
 var prng = std.Random.DefaultPrng.init(0);
 const rand = prng.random();
 
-var cars: std.MultiArrayList(Car) = .{};
-
 const gravity = 9.81;
+
+var cars: std.MultiArrayList(Car) = .{};
 
 const Car = struct {
     body: BodyDef,
     tires: [n_tires_max]TireDef,
     steering: SteeringDef = .{},
+    drive_train: DriveTrainDef = .{},
     engine: EngineDef = .{},
     id: id_type.IdType()
 };
@@ -255,9 +315,29 @@ const BodyDef = struct {
     obj: *gfx.ObjectDataType,
 };
 
+const DriveTrainLayoutE = enum(u8) {
+    awd,
+    fwd,
+    rwd
+};
+
+fn mapDriveTrainLayout(e: DriveTrainLayoutE) []const u8 {
+    return switch (e) {
+        inline .awd => "AWD",
+        inline .fwd => "FWD",
+        inline .rwd => "RWD",
+    };
+}
+
+const DriveTrainDef = struct {
+    n_powered: u32 = 2,
+    layout: DriveTrainLayoutE = .rwd
+};
+
 const EngineDef = struct {
+    drag: f32 = 200, // Nm
     torque_max: f32 = 2000.0, // Nm
-    throttle: f32 = 0.0
+    throttle: f32 = 0.0,
 };
 
 const SteeringDef = struct {
@@ -319,11 +399,13 @@ const n_tires_max = 4;
 
 var acc_ext: Vec2d = .{0.0, 0.0};
 
+// Graphics data
 var gfx_car: gfx.GraphicsDataType = .{};
 var gfx_tires: gfx.GraphicsDataType = .{};
 var gfx_dbg_vec: gfx.GraphicsDataType = .{.primitive_mode = .LineStrip};
 var gfx_dbg_com: gfx.GraphicsDataType = .{.primitive_mode = .Points};
 
+// Performance measurements
 var pf: struct {
     gfx: stats.PerFrameTimerBuffered(20) = stats.PerFrameTimerBuffered(20).init(),
     phy: stats.PerFrameTimerBuffered(20) = stats.PerFrameTimerBuffered(20).init(),
@@ -356,6 +438,7 @@ fn initCars(allocator: std.mem.Allocator) !void {
 
         car.engine.throttle = 0.0;
         car.engine.torque_max = 2000.0;
+        car.engine.drag = 20.0;
 
         car.tires[0].pos = .{-1.5, -0.8};
         car.tires[1].pos = .{ 1.5, -0.8};
@@ -365,21 +448,6 @@ fn initCars(allocator: std.mem.Allocator) !void {
         car.tires[1].is_steered = true;
         car.tires[2].is_steered = true;
         car.tires[3].is_steered = false;
-        // FWD
-        // car.tires[0].is_powered = false;
-        // car.tires[1].is_powered = true;
-        // car.tires[2].is_powered = true;
-        // car.tires[3].is_powered = false;
-        // RWD
-        car.tires[0].is_powered = true;
-        car.tires[1].is_powered = false;
-        car.tires[2].is_powered = false;
-        car.tires[3].is_powered = true;
-        // AWD
-        // car.tires[0].is_powered = true;
-        // car.tires[1].is_powered = true;
-        // car.tires[2].is_powered = true;
-        // car.tires[3].is_powered = true;
 
         car.tires[0].id.init();
         car.tires[1].id.init();
@@ -393,6 +461,8 @@ fn initCars(allocator: std.mem.Allocator) !void {
         car.steering.speed = 1.5;
 
         try cars.append(allocator, car);
+
+        setupDriveTrainLayout(i_car, .rwd);
     }
     for (cars.items(.body), cars.items(.tires)) |*b, *t| {
         b.obj = try gfx.createObjectData();
@@ -592,55 +662,6 @@ fn updateCarGfx() !void {
     pf.gfx.stop();
 }
 
-var buf_drag: [2]buf.Buffer(f32, fps_main) = .{
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init()
-};
-var buf_wheel_vel: [4]buf.Buffer(f32, fps_main) = .{
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init()
-};
-var buf_tire_load: [4]buf.Buffer(f32, fps_main) = .{
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init()
-};
-var buf_tire_fx: [4]buf.Buffer(f32, fps_main) = .{
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init()
-};
-var buf_tire_fy: [4]buf.Buffer(f32, fps_main) = .{
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init()
-};
-var buf_tire_lon: [4]buf.Buffer(f32, fps_main) = .{
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init()
-};
-var buf_tire_slip_a: [4]buf.Buffer(f32, fps_main) = .{
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init()
-};
-var buf_tire_slip_r: [4]buf.Buffer(f32, fps_main) = .{
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init(),
-    buf.Buffer(f32, fps_main).init()
-};
-var buf_tire_model_lin: buf.Buffer(f32, fps_main) = buf.Buffer(f32, fps_main).init();
-var buf_tire_model_paj: buf.Buffer(f32, fps_main) = buf.Buffer(f32, fps_main).init();
-
 fn updateTireFn() void {
     for (cars.items(.body), cars.items(.tires)) |b, *t| {
         var sum: f32 = 0.0;
@@ -657,7 +678,7 @@ fn updateTireForces() void {
     pf.phy_tire.start();
     // const mu = 0.8;
 
-    for (cars.items(.body), cars.items(.engine), cars.items(.tires)) |*b, e, *t| {
+    for (cars.items(.body), cars.items(.drive_train), cars.items(.engine), cars.items(.tires)) |*b, d, e, *t| {
 
         for (t, 0..) |*t_i, i| {
             t_i.f_x = 0.0;
@@ -701,15 +722,16 @@ fn updateTireForces() void {
             // var v_thr: f32 = 0.0;
             var r_slip: f32 = 0.0;
             var dir: f32 = 1.0;
-            if (is_accelerating and t_i.is_powered) t_i.wheel_torque = e.throttle;
+            if (is_accelerating and t_i.is_powered) t_i.wheel_torque = e.throttle / @as(f32, @floatFromInt(d.n_powered));
+            // log_car.debug("wheel torque = {d:.2}Nm", .{t_i.wheel_torque});
             if (v_lon > 0.1 or v_lon <= -0.01) {
                 r_slip = std.math.clamp((v_cp / v_lon - 1) * 100, -100.0, 100.0);
                 // if (is_accelerating and v_thr > 0.0) r_slip = @min(100.0, (v_thr / v_lon - 1) * 100);
                 //
                 // else r_slip = v_abs / v_lon - 1; // This is just a hack, adapt
                 // else r_slip = -100.0;
-            } else if (v_lon > -0.01) {
-                if (is_accelerating) r_slip = 0.1;
+            } else if (v_lon < 0.1) {
+                if (is_accelerating) r_slip = v_lon + 0.01;
             } else {
                 // if (is_accelerating and v_thr > 0.0) r_slip = @min(100.0, (v_thr / -v_lon - 1) * 100);
                 r_slip = -100.0;//v_abs / v_lon - 1;
@@ -769,7 +791,8 @@ fn updateTireForces() void {
             // ---
             var power: f32 = 0.0;
             // if (t_i.is_powered) {
-                power = dir * t_i.f_z * tire_prm.lon.peak * @sin(tire_prm.lon.shape * std.math.atan(r_slip - tire_prm.lon.curvature * (r_slip - std.math.atan(r_slip))));
+            const slip_r = tire_prm.lon.stiffness * r_slip;
+                power = dir * t_i.f_z * tire_prm.lon.peak * @sin(tire_prm.lon.shape * std.math.atan(slip_r - tire_prm.lon.curvature * (slip_r - std.math.atan(slip_r))));
             // }
             if (v_abs > 0.01) {
                 // const rolling_resistence = t_i.f_z * 0.01;
@@ -802,6 +825,14 @@ fn updateTireForces() void {
 
                 t_i.wheel_torque += torque;
             }
+            // if (!is_accelerating) {
+            //     t_i.wheel_torque -= e.drag / @as(f32, @floatFromInt(e.n_powered));
+            //     if (t_i.wheel_vel < 0.0) {
+            //         t_i.wheel_torque = 0.0;
+            //         t_i.wheel_acc = 0.0;
+            //         t_i.wheel_vel = 0.0;
+            //     }
+            // }
 
             // Use handbrake
             if ((i == 0 or i == 3) and is_handbraking) {
@@ -872,6 +903,36 @@ fn clearForceAndTorque() void {
             t_i.wheel_torque = 0.0;
             t_i.wheel_acc = 0.0;
         }
+    }
+}
+
+fn setupDriveTrainLayout(i_car: u32, l: DriveTrainLayoutE) void {
+    cars.items(.drive_train)[i_car].layout = l;
+
+    const tire = &cars.items(.tires)[i_car];
+
+    switch (l) {
+        .awd => {
+                    tire[0].is_powered = true;
+                    tire[1].is_powered = true;
+                    tire[2].is_powered = true;
+                    tire[3].is_powered = true;
+                    cars.items(.drive_train)[i_car].n_powered = 4;
+        },
+        .fwd => {
+                    tire[0].is_powered = false;
+                    tire[1].is_powered = true;
+                    tire[2].is_powered = true;
+                    tire[3].is_powered = false;
+                    cars.items(.drive_train)[i_car].n_powered = 2;
+        },
+        .rwd => {
+                    tire[0].is_powered = true;
+                    tire[1].is_powered = false;
+                    tire[2].is_powered = false;
+                    tire[3].is_powered = true;
+                    cars.items(.drive_train)[i_car].n_powered = 2;
+        },
     }
 }
 
