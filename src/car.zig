@@ -17,6 +17,12 @@ const fps = fps_main * sub_steps;
 pub fn init(allocator: std.mem.Allocator) !void {
     prng.seed(23041979 * @as(u64, @intCast(std.time.timestamp())));
 
+    try pf.gfx.init();
+    try pf.phy.init();
+    try pf.phy_aero.init();
+    try pf.phy_dyn.init();
+    try pf.phy_tire.init();
+
     try gfx.init();
     try initCars(allocator);
     try initGfx();
@@ -407,11 +413,11 @@ var gfx_dbg_com: gfx.GraphicsDataType = .{.primitive_mode = .Points};
 
 // Performance measurements
 var pf: struct {
-    gfx: stats.PerFrameTimerBuffered(20) = stats.PerFrameTimerBuffered(20).init(),
-    phy: stats.PerFrameTimerBuffered(20) = stats.PerFrameTimerBuffered(20).init(),
-    phy_aero: stats.PerFrameTimerBuffered(20) = stats.PerFrameTimerBuffered(20).init(),
-    phy_dyn: stats.PerFrameTimerBuffered(20) = stats.PerFrameTimerBuffered(20).init(),
-    phy_tire: stats.PerFrameTimerBuffered(20) = stats.PerFrameTimerBuffered(20).init()
+    gfx: stats.PerFrameTimerBuffered(20) = undefined,
+    phy: stats.PerFrameTimerBuffered(20) = undefined,
+    phy_aero: stats.PerFrameTimerBuffered(20) = undefined,
+    phy_dyn: stats.PerFrameTimerBuffered(20) = undefined,
+    phy_tire: stats.PerFrameTimerBuffered(20) = undefined
 } = .{};
 
 fn initCars(allocator: std.mem.Allocator) !void {

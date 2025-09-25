@@ -53,7 +53,8 @@ pub fn main() !void {
     try car.init(allocator);
     defer car.deinit(allocator);
 
-    var pf_gui: bfe.util.stats.PerFrameTimerBuffered(20) = bfe.util.stats.PerFrameTimerBuffered(20).init();
+    var pf_gui: bfe.util.stats.PerFrameTimerBuffered(20) = undefined;
+    try pf_gui.init();
     var counter: u64 = 0;
 
     // Run

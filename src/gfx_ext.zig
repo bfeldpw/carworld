@@ -19,11 +19,11 @@ pub const GraphicsDataType = struct {
     ebo: u32 = 0,
     ebo_capacity: u32 = 0,
     vbo_capacity: u32 = 0,
-    data0_buf: std.ArrayList(f32) = std.ArrayList(f32).init(allocator),
-    data_buf: std.ArrayList(f32) = std.ArrayList(f32).init(allocator),
-    ebo_buf: std.ArrayList(u32) = std.ArrayList(u32).init(allocator),
-    data_free: std.ArrayList(IndexRange) = std.ArrayList(IndexRange).init(allocator),
-    ebo_free: std.ArrayList(IndexRange) = std.ArrayList(IndexRange).init(allocator)
+    data0_buf: std.ArrayList(f32) = std.ArrayList(f32){},
+    data_buf: std.ArrayList(f32) = std.ArrayList(f32){},
+    ebo_buf: std.ArrayList(u32) = std.ArrayList(u32){},
+    data_free: std.ArrayList(IndexRange) = std.ArrayList(IndexRange){},
+    ebo_free: std.ArrayList(IndexRange) = std.ArrayList(IndexRange){},
 };
 
 pub const ObjectDataType = struct {
@@ -50,7 +50,7 @@ pub fn init() !void {
     // which account fors 20MiB of memory. If exceeding the limit nonetheless
     // no new objects will be created if using the helper function
     // "gfx_ext.appendObject" consistently.
-    try objects.ensureTotalCapacity(1_000_000);
+    try objects.ensureTotalCapacity(allocator, 1_000_000);
     try gfx_core.enablePrimitiveRestart();
 }
 
@@ -64,8 +64,8 @@ pub fn deinit() void {
     log_gfx.info("ebo new: {}", .{ebo_nr_new});
     log_gfx.info("ebo reused: {}", .{ebo_nr_reused});
 
-    objects.deinit();
-    objects_free.deinit();
+    objects.deinit(allocator);
+    objects_free.deinit(allocator);
 
     const leaked = gpa.deinit();
     if (leaked == .leak) log_gfx.err("Memory leaked in GeneralPurposeAllocator", .{});
@@ -116,8 +116,8 @@ pub fn createObjectDataAddSrc(obj: *ObjectDataType, g: *GraphicsDataType, n: u32
     if (!is_reused) {
         obj.src[i_src].i_data.r0 = @intCast(g.data0_buf.items.len);
         obj.src[i_src].i_data.r1 = @intCast(g.data0_buf.items.len + n_data - 1);
-        try g.data0_buf.resize(g.data0_buf.items.len + n_data);
-        try g.data_buf.resize(g.data_buf.items.len + n_data);
+        try g.data0_buf.resize(allocator, g.data0_buf.items.len + n_data);
+        try g.data_buf.resize(allocator, g.data_buf.items.len + n_data);
         data_nr_new += 1;
     }
 
@@ -134,7 +134,7 @@ pub fn createObjectDataAddSrc(obj: *ObjectDataType, g: *GraphicsDataType, n: u32
     if (!is_reused) {
         obj.src[i_src].i_ebo.r0 = @intCast(g.ebo_buf.items.len);
         obj.src[i_src].i_ebo.r1 = @intCast(g.ebo_buf.items.len + n_ebo - 1);
-        try g.ebo_buf.resize(g.ebo_buf.items.len + n_ebo);
+        try g.ebo_buf.resize(allocator, g.ebo_buf.items.len + n_ebo);
         ebo_nr_new += 1;
     }
 
@@ -211,15 +211,15 @@ pub fn initBatch(g: *GraphicsDataType, cap_data: u32, cap_ebo: u32) !void {
     // If cap is 0, just append when initialising, do not expect increase in
     // simulation loop
     if (cap_data != 0) {
-        try g.data0_buf.ensureTotalCapacity(cap_data);
-        try g.data_buf.ensureTotalCapacity(cap_data);
+        try g.data0_buf.ensureTotalCapacity(allocator, cap_data);
+        try g.data_buf.ensureTotalCapacity(allocator, cap_data);
         log_gfx.debug("Reserving {} * f32 for data", .{cap_data});
     }
     if (cap_ebo != 0) {
-        try g.ebo_buf.ensureTotalCapacity(cap_ebo);
+        try g.ebo_buf.ensureTotalCapacity(allocator, cap_ebo);
         log_gfx.debug("Reserving {} * u32 for indexing", .{cap_ebo});
     }
-    try objects_free.ensureTotalCapacity(100);
+    try objects_free.ensureTotalCapacity(allocator, 100);
 
     // Upload data
     g.vbo_capacity = @intCast(g.data_buf.capacity);
@@ -232,11 +232,11 @@ pub fn initBatch(g: *GraphicsDataType, cap_data: u32, cap_ebo: u32) !void {
 }
 
 pub fn deinitBatch(g: *GraphicsDataType) void {
-    g.data0_buf.deinit();
-    g.data_buf.deinit();
-    g.ebo_buf.deinit();
-    g.data_free.deinit();
-    g.ebo_free.deinit();
+    g.data0_buf.deinit(allocator);
+    g.data_buf.deinit(allocator);
+    g.ebo_buf.deinit(allocator);
+    g.data_free.deinit(allocator);
+    g.ebo_free.deinit(allocator);
 }
 
 //-----------------------------------------------------------------------------//
@@ -323,8 +323,8 @@ const IndexRange = struct {
 
 const GfxSourcesMax = 10;
 
-var objects: std.ArrayList(ObjectDataType) = std.ArrayList(ObjectDataType).init(allocator);
-var objects_free: std.ArrayList(*ObjectDataType) = std.ArrayList(*ObjectDataType).init(allocator);
+var objects: std.ArrayList(ObjectDataType) = std.ArrayList(ObjectDataType){};
+var objects_free: std.ArrayList(*ObjectDataType) = std.ArrayList(*ObjectDataType){};
 var objects_nr_removed: u32 = 0;
 var objects_nr_reused: u32 = 0;
 var objects_nr_new: u32 = 0;
@@ -378,7 +378,7 @@ pub fn destroyObject(obj: *ObjectDataType) !void {
 
 pub fn appendObject(obj: ObjectDataType) !*ObjectDataType {
     std.debug.assert(objects.items.len < objects.capacity);
-    try objects.append(obj);
+    try objects.append(allocator, obj);
     return &objects.items[objects.items.len - 1];
 }
 
