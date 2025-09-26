@@ -155,6 +155,12 @@ pub fn throttle(t: f32, t_i: f32) void {
     else is_accelerating = false;
 }
 
+pub fn brake(b: f32, b_i: f32) void {
+    const br = &cars.items(.brakes)[0].torque;
+    br.* = cars.items(.brakes)[0].torque_max * (b + 1.0) * 0.5 * b_i;
+    log_car.debug("br = {d:.2}Nm", .{br.*});
+}
+
 pub fn increaseThrottle() void {
     const thr = &cars.items(.engine)[0].throttle;
     if (thr.* < cars.items(.engine)[0].torque_max) thr.* += 100.0 / fps_main;
@@ -182,10 +188,7 @@ pub fn decelerate() void {
 
 pub fn steer(s: f32, s_i: f32) void {
     const car = &cars.items(.steering)[0];
-    car.target -= s_i * car.speed * 1.0 / fps_main;
-    if (car.max * s * s_i >= 0.0 and car.target > car.max * s * s_i or
-        car.max * s * s_i < 0.0 and car.target <  car.max * s * s_i)
-        car.target = std.math.sign(car.max * s * s_i) * car.max * s * s_i;
+    car.target = -s_i * s * car.max;
 }
 
 pub fn steerLeft() void {
@@ -308,10 +311,11 @@ var cars: std.MultiArrayList(Car) = .{};
 
 const Car = struct {
     body: BodyDef,
-    tires: [n_tires_max]TireDef,
-    steering: SteeringDef = .{},
+    brakes: BrakesDef = .{},
     drive_train: DriveTrainDef = .{},
     engine: EngineDef = .{},
+    steering: SteeringDef = .{},
+    tires: [n_tires_max]TireDef,
     id: id_type.IdType()
 };
 
@@ -337,6 +341,12 @@ const BodyDef = struct {
     area_y: f32 = 6.5,
     // Graphics
     obj: *gfx.ObjectDataType,
+};
+
+const BrakesDef = struct {
+    torque_max: f32 = 2000.0, // Nm
+    torque: f32 = 0.0, // Nm
+    balance_front: f32 = 0.5,
 };
 
 const DriveTrainLayoutE = enum(u8) {
@@ -460,6 +470,10 @@ fn initCars(allocator: std.mem.Allocator) !void {
         car.body.cw_y = 0.9;
         car.body.area_y = 6.5;
 
+        car.brakes.torque = 0.0;
+        car.brakes.torque_max = 1000.0;
+        car.brakes.balance_front = 0.8;
+        
         car.engine.throttle = 0.0;
         car.engine.torque_max = 2000.0;
         car.engine.drag = 20.0;
@@ -587,13 +601,13 @@ fn updateCarDynamics() void {
             if (s.angle > s.target) {
                 s.angle -= s.speed / fps;
             } else {
-                s.angle = s.target;
+                s.angle += s.speed / fps;
             }
-        } else if (s.target > 0) {
+        } else {//if (s.target > 0) {
             if (s.angle < s.target) {
                 s.angle += s.speed / fps;
             } else {
-                s.angle = s.target;
+                s.angle -= s.speed / fps;
             }
         }
         for (t) |*t_i| {
@@ -693,7 +707,7 @@ fn updateTireFn() void {
             sum += getLength2(t_i.pos - b.com);
         }
         for (t) |*t_i| {
-            t_i.f_z = b.mass * gravity  * (0.5 - getLength2(t_i.pos - b.com) / sum);
+            t_i.f_z = b.mass * gravity  * 0.25;//(0.5 - getLength2(t_i.pos - b.com) / sum);
         }
     }
 }
@@ -702,7 +716,7 @@ fn updateTireForces() void {
     pf.phy_tire.start();
     // const mu = 0.8;
 
-    for (cars.items(.body), cars.items(.drive_train), cars.items(.engine), cars.items(.tires)) |*b, d, e, *t| {
+    for (cars.items(.body), cars.items(.brakes), cars.items(.drive_train), cars.items(.engine), cars.items(.tires)) |*b, br, d, e, *t| {
 
         for (t, 0..) |*t_i, i| {
             t_i.f_x = 0.0;
@@ -858,6 +872,16 @@ fn updateTireForces() void {
             //     }
             // }
 
+            // Brake
+            if (i == 1 or i == 2) t_i.wheel_torque -= br.torque * br.balance_front
+            else t_i.wheel_torque -= br.torque * (1.0 - br.balance_front);
+                
+            if (t_i.wheel_vel < 0.0) {
+                t_i.wheel_torque = 0.0;
+                t_i.wheel_acc = 0.0;
+                t_i.wheel_vel = 0.0;
+            }
+            
             // Use handbrake
             if ((i == 0 or i == 3) and is_handbraking) {
                 t_i.wheel_torque -= 10000.0;

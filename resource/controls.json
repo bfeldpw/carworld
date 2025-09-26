@@ -1,0 +1,11 @@
+{
+  "steer_jid": 0,
+  "steer_axis": 0,
+  "steer_invert": 1.0,
+  "throttle_jid": 0,
+  "throttle_axis": 5,
+  "throttle_invert": 1.0,
+  "brake_jid": 0,
+  "brake_axis": 2,
+  "brake_invert": 1.0
+}

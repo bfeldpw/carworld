@@ -56,6 +56,10 @@ pub inline fn getBrake() f32 {
     return ipt.getAxisState(control_setup.brake_jid, control_setup.brake_axis);
 }
 
+pub inline fn getBrakeInvert() f32 {
+    return control_setup.brake_invert;
+}
+
 pub fn setupControls(ctl: ControlSetup) void {
     control_setup = ctl;
 }
@@ -127,5 +131,6 @@ fn process() void {
     if (ipt.getKeyState(.key_d)) car.steerRight();
 
     car.steer(getSteering(), getSteeringInvert());
+    car.brake(getBrake(), getBrakeInvert());
     car.throttle(getThrottle(), getThrottleInvert());
 }
