@@ -1,9 +1,11 @@
 const std = @import("std");
+
 const bfe = @import("bfe");
 const cam = bfe.gfx.cam;
 const cfg = bfe.cfg;
 const gui = bfe.gfx.gui;
 const id_type = bfe.util.id_type;
+
 const car = @import("car.zig");
 const input = @import("input_plugin.zig");
 
@@ -50,6 +52,8 @@ pub fn main() !void {
 
     try setupGui();
 
+    try input.loadControlConfig(allocator, "resource/controls.json");
+    
     try car.init(allocator);
     defer car.deinit(allocator);
 
@@ -70,6 +74,8 @@ pub fn main() !void {
         
             const wgt_cd = try gui.getTextWidget("wgt_cd");
             wgt_cd.text = try car.getCarData(arena, 0);
+            const wgt_input = try gui.getTextWidget("wgt_input");
+            wgt_input.text = try formatInputData(arena);
             try bfe.gfx.gui.update();
 
         pf_gui.stop();
@@ -148,84 +154,31 @@ fn setupGui() !void {
     try gui.addTextWidget("ovl_input", "wgt_input", wgt_input);
 }
 
-// fn formatInputData(a: std.mem.Allocator) ![]u8 {
-    // const str1 = try std.fmt.allocPrint(
-    //     a,
-    //     "GENERIC\n" ++
-    //     "  Velocity = {d:.0} km/h\n" ++
-    //     "  Drive train layout: {s}\n" ++
-    //     "\n" ++
-    //     "TIRE MODEL\n" ++
-    //     "  Linear   = {d:.0} %\n" ++
-    //     "  Pacejka  = {d:.0} %\n" ++
-    //     "\n" ++
-    //     "TIRE DATA\n" ++
-    //     "  slip angle [degree]   {d:5.1} {d:5.1}\n" ++
-    //     "                        {d:5.1} {d:5.1}\n" ++
-    //     "\n" ++
-    //     "  slip ratio [%]        {d:4.0} {d:4.0}\n" ++
-    //     "                        {d:4.0} {d:4.0}\n" ++
-    //     "\n" ++
-    //     "  load [kN]             {d:4.1} {d:4.1}\n" ++
-    //     "                        {d:4.1} {d:4.1}\n" ++
-    //     "\n" ++
-    //     "  force lat. [kN]       {d:4.1} {d:4.1}\n" ++
-    //     "                        {d:4.1} {d:4.1}\n" ++
-    //     "\n" ++
-    //     "  force lon. [kN]       {d:4.1} {d:4.1}\n" ++
-    //     "                        {d:4.1} {d:4.1}\n" ++
-    //     "\n" ++
-    //     "  velocity lon. [km/h]  {d:4.1} {d:4.1}\n" ++
-    //     "                        {d:4.1} {d:4.1}\n" ++
-    //     "\n" ++
-    //     "  velocity tan. [km/h]  {d:4.1} {d:4.1}\n" ++
-    //     "                        {d:4.1} {d:4.1}\n"
-    //         ,
-    //     .{getLength2(cars.items(.body)[idx].vel) * 3.6,
-    //       mapDriveTrainLayout(cars.items(.drive_train)[0].layout),
-    //       buf_tire_model_lin.getAvg(),
-    //       buf_tire_model_paj.getAvg(),
-    //       buf_tire_slip_a[2].getAvg(),
-    //       buf_tire_slip_a[1].getAvg(),
-    //       buf_tire_slip_a[3].getAvg(),
-    //       buf_tire_slip_a[0].getAvg(),
-    //       buf_tire_slip_r[2].getAvg(),
-    //       buf_tire_slip_r[1].getAvg(),
-    //       buf_tire_slip_r[3].getAvg(),
-    //       buf_tire_slip_r[0].getAvg(),
-    //       buf_tire_load[2].getAvg() * 0.001,
-    //       buf_tire_load[1].getAvg() * 0.001,
-    //       buf_tire_load[3].getAvg() * 0.001,
-    //       buf_tire_load[0].getAvg() * 0.001,
-    //       buf_tire_fy[2].getAvg() * 0.001,
-    //       buf_tire_fy[1].getAvg() * 0.001,
-    //       buf_tire_fy[3].getAvg() * 0.001,
-    //       buf_tire_fy[0].getAvg() * 0.001,
-    //       buf_tire_fx[2].getAvg() * 0.001,
-    //       buf_tire_fx[1].getAvg() * 0.001,
-    //       buf_tire_fx[3].getAvg() * 0.001,
-    //       buf_tire_fx[0].getAvg() * 0.001,
-    //       buf_tire_lon[2].getAvg() * 3.6,
-    //       buf_tire_lon[1].getAvg() * 3.6,
-    //       buf_tire_lon[3].getAvg() * 3.6,
-    //       buf_tire_lon[0].getAvg() * 3.6,
-    //       buf_wheel_vel[2].getAvg() * 3.6,
-    //       buf_wheel_vel[1].getAvg() * 3.6,
-    //       buf_wheel_vel[3].getAvg() * 3.6,
-    //       buf_wheel_vel[0].getAvg() * 3.6}
-    // );
+fn formatInputData(a: std.mem.Allocator) ![]u8 {
+    var iter = bfe.input.getJoysticks().iterator();
 
-    // const str2 = try std.fmt.allocPrint(
-    //     a,
-    //     "\nAERODYNAMICS\n" ++
-    //     "    drag (front) = {d:.0} N\n" ++
-    //     "    drag (side)  = {d:.0} N\n"
-    //         ,
-    //     .{buf_drag[0].getAvg(),
-    //       buf_drag[1].getAvg()}
-    // );
-    // return try std.fmt.allocPrint(a, "{s}{s}", .{str1, str2});
-// }
+    var str_r: []u8 = try std.fmt.allocPrint(a, "", .{});
+    var str_j: []u8 = undefined;
+    var str_k: []u8 = undefined;
+    var i_j: i32 = 0;
+    while (iter.next()) |entry| {
+
+        str_j = try std.fmt.allocPrint(a, "{s}Joystick {}\n", .{str_r, entry.key_ptr.*});
+        str_r = try std.fmt.allocPrint(a, "{s}", .{str_j});
+
+        var i: u32 = 0;
+        for (entry.value_ptr.*) |axis| {
+            const str_a = try std.fmt.allocPrint(a,
+                          "  Axis {} = {d:5.2} \n",
+                        .{i, axis});
+            i += 1;
+            str_k = try std.fmt.allocPrint(a, "{s}{s}", .{str_r, str_a});
+            str_r = try std.fmt.allocPrint(a, "{s}", .{str_k});
+        }
+        i_j += 1;
+    }
+    return str_r; 
+}
 
 //-----------------------------------------------------------------------------//
 //   Tests

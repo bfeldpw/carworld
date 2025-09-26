@@ -1,9 +1,11 @@
 const std = @import("std");
+
 const bfe = @import("bfe");
 const cfg = bfe.cfg;
 const buf = bfe.util.value_buffer;
 const id_type = bfe.util.id_type;
 const stats = bfe.util.stats;
+
 const gfx = @import("gfx_ext.zig");
 
 const fps_main = 60.0;
@@ -145,6 +147,14 @@ var is_accelerating: bool = false;
 var is_decelerating: bool = false;
 var is_handbraking: bool = false;
 
+pub fn throttle(t: f32, t_i: f32) void {
+    const thr = &cars.items(.engine)[0].throttle;
+    thr.* = cars.items(.engine)[0].torque_max * (t + 1.0) * 0.05 * t_i;
+    log_car.debug("thr = {d:.2}Nm", .{thr.*});
+    if (thr.* > 0.01) is_accelerating = true
+    else is_accelerating = false;
+}
+
 pub fn increaseThrottle() void {
     const thr = &cars.items(.engine)[0].throttle;
     if (thr.* < cars.items(.engine)[0].torque_max) thr.* += 100.0 / fps_main;
@@ -168,6 +178,14 @@ pub fn accelerate() void {
 
 pub fn decelerate() void {
     is_decelerating = true;
+}
+
+pub fn steer(s: f32, s_i: f32) void {
+    const car = &cars.items(.steering)[0];
+    car.target -= s_i * car.speed * 1.0 / fps_main;
+    if (car.max * s * s_i >= 0.0 and car.target > car.max * s * s_i or
+        car.max * s * s_i < 0.0 and car.target <  car.max * s * s_i)
+        car.target = std.math.sign(car.max * s * s_i) * car.max * s * s_i;
 }
 
 pub fn steerLeft() void {

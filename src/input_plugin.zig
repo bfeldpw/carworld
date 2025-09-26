@@ -1,18 +1,27 @@
 const std = @import("std");
+
 const bfe = @import("bfe");
-const main = @import("main.zig");
 const c = bfe.gfx.c.c;
 const gfx_cam = bfe.gfx.cam;
 const ipt = bfe.input;
+
 const car = @import("car.zig");
+const main = @import("main.zig");
 
 //-----------------------------------------------------------------------------//
 //   Error Sets / Enums / Types / Structs
 //-----------------------------------------------------------------------------//
-//
-const Controls = struct {
-    steer_id: u32,
-    steer_axis: u32,
+
+const ControlSetup = struct {
+    steer_jid: i32 = 0,
+    steer_axis: i32 = 0,
+    steer_invert: f32 = 1.0,
+    throttle_jid: i32 = 0,
+    throttle_axis: i32 = 1,
+    throttle_invert: f32 = 1.0,
+    brake_jid: i32 = 0,
+    brake_axis: i32 = 2,
+    brake_invert: f32 = 1.0,
 };
 
 //-----------------------------------------------------------------------------//
@@ -27,11 +36,63 @@ pub fn init() !void {
 //   Getter/Setter
 //-----------------------------------------------------------------------------//
 
+pub inline fn getSteering() f32 {
+    return ipt.getAxisState(control_setup.steer_jid, control_setup.steer_axis);
+}
+
+pub inline fn getSteeringInvert() f32 {
+    return control_setup.steer_invert;
+}
+
+pub inline fn getThrottle() f32 {
+    return ipt.getAxisState(control_setup.throttle_jid, control_setup.throttle_axis);
+}
+
+pub inline fn getThrottleInvert() f32 {
+    return control_setup.throttle_invert;
+}
+
+pub inline fn getBrake() f32 {
+    return ipt.getAxisState(control_setup.brake_jid, control_setup.brake_axis);
+}
+
+pub fn setupControls(ctl: ControlSetup) void {
+    control_setup = ctl;
+}
+
+//-----------------------------------------------------------------------------//
+//   Getter/Setter
+//-----------------------------------------------------------------------------//
+
+pub fn loadControlConfig(allocator: std.mem.Allocator, f: []const u8) !void {
+    log_input.info("Loading controller config: {s}", .{f});
+    
+    // Read the JSON file into memory
+    const json_data = std.fs.cwd().readFileAlloc(f,allocator, std.Io.Limit.unlimited) catch |err| {
+        log_input.warn("Unable to read file {s}: {}", .{f, err});
+        return;
+    };
+    defer allocator.free(json_data);
+
+    // Parse the JSON data into your struct
+    const parsed = std.json.parseFromSlice(ControlSetup, allocator, json_data, .{}) catch |err| {
+        log_input.warn("Unable to parse json {s}: {}", .{json_data, err});
+        return;
+    };
+    defer parsed.deinit();
+
+    log_input.debug("Controller config loaded: \n{s}", .{json_data});
+
+    control_setup = parsed.value;
+}
+
 //-----------------------------------------------------------------------------//
 //   Internal
 //-----------------------------------------------------------------------------//
 
 const log_input = std.log.scoped(.input);
+
+var control_setup: ControlSetup = .{};
 
 //-----------------------------------------------------------------------------//
 //   Processing
@@ -65,4 +126,6 @@ fn process() void {
     if (ipt.getKeyState(.key_a)) car.steerLeft();
     if (ipt.getKeyState(.key_d)) car.steerRight();
 
+    car.steer(getSteering(), getSteeringInvert());
+    car.throttle(getThrottle(), getThrottleInvert());
 }
