@@ -13,6 +13,7 @@ const main = @import("main.zig");
 //-----------------------------------------------------------------------------//
 
 const ControlSetup = struct {
+    // Car controls
     steer_jid: i32 = 0,
     steer_axis: i32 = 0,
     steer_invert: f32 = 1.0,
@@ -22,6 +23,10 @@ const ControlSetup = struct {
     brake_jid: i32 = 0,
     brake_axis: i32 = 2,
     brake_invert: f32 = 1.0,
+    handbrake_jid: i32 = 0,
+    handbrake_bt: i32 = 0,
+    // Game controls
+    pause_bt: i32 = 1
 };
 
 //-----------------------------------------------------------------------------//
@@ -58,6 +63,10 @@ pub inline fn getBrake() f32 {
 
 pub inline fn getBrakeInvert() f32 {
     return control_setup.brake_invert;
+}
+
+pub inline fn getHandbrake() bool {
+    return ipt.getButtonState(control_setup.handbrake_jid, control_setup.handbrake_bt);
 }
 
 pub fn setupControls(ctl: ControlSetup) void {
@@ -113,6 +122,7 @@ fn process() void {
         if (ipt.getKeyPressEvent(.key_e)) bfe.gfx.gui.toggleEditMode();
     }
     if (ipt.getKeyPressEvent(.key_h)) car.toggleHook();
+    if (ipt.getKeyPressEvent(.key_j)) car.setHook();
     if (ipt.getKeyPressEvent(.key_t)) car.rotateDriveTrainLayout();
 
     // const shift = ipt.getKeyState(.key_shift_left);
@@ -132,5 +142,6 @@ fn process() void {
 
     car.steer(getSteering(), getSteeringInvert());
     car.brake(getBrake(), getBrakeInvert());
+    if (getHandbrake()) car.useHandbrake();
     car.throttle(getThrottle(), getThrottleInvert());
 }

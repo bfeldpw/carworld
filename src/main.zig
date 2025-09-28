@@ -167,12 +167,21 @@ fn formatInputData(a: std.mem.Allocator) ![]u8 {
         str_r = try std.fmt.allocPrint(a, "{s}", .{str_j});
 
         var i: u32 = 0;
-        for (entry.value_ptr.*) |axis| {
+        for (entry.value_ptr.axes) |axis| {
             const str_a = try std.fmt.allocPrint(a,
-                          "  Axis {} = {d:5.2} \n",
+                          "  Axis {d:2} = {d:5.2} \n",
                         .{i, axis});
             i += 1;
             str_k = try std.fmt.allocPrint(a, "{s}{s}", .{str_r, str_a});
+            str_r = try std.fmt.allocPrint(a, "{s}", .{str_k});
+        }
+        i = 0;
+        for (entry.value_ptr.buttons) |button| {
+            const str_b = try std.fmt.allocPrint(a,
+                          "  Button {d:2} = {d:1} \n",
+                        .{i, button});
+            i += 1;
+            str_k = try std.fmt.allocPrint(a, "{s}{s}", .{str_r, str_b});
             str_r = try std.fmt.allocPrint(a, "{s}", .{str_k});
         }
         i_j += 1;
