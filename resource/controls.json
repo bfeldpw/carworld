@@ -13,6 +13,14 @@
         "handbrake_bt": 0
     },
     "game": {
+        "cam_x_jid": 0,
+        "cam_x_axis": 3,
+        "cam_x_invert": 1.0,
+        "cam_x_deadzone": 0.15,
+        "cam_y_jid": 0,
+        "cam_y_axis": 4,
+        "cam_y_invert": -1.0,
+        "cam_y_deadzone": 0.15,
         "pause_jid": 0,
         "pause_bt": 7
     }

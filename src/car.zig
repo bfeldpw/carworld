@@ -213,17 +213,18 @@ pub fn steerRight() void {
 }
 
 pub fn render() !void {
+    const s = bfe.gfx.cfg.fullscreen.sampling_factor;
     try bfe.gfx.base.setColor(.PxyCuniF32, 1.0, 1.0, 1.0, 1.0);
-    try bfe.gfx.core.setLineWidth(1);
+    try bfe.gfx.core.setLineWidth(1.0 * s);
     try gfx.drawBatch(&gfx_car);
     try gfx.drawBatch(&gfx_tires);
     try bfe.gfx.base.setColor(.PxyCuniF32, 0.0, 0.0, 1.0, 1.0);
-    try bfe.gfx.core.setLineWidth(3);
+    try bfe.gfx.core.setLineWidth(3.0 * s);
     try gfx.drawBatch(&gfx_dbg_vec);
     try bfe.gfx.base.setColor(.PxyCuniF32, 1.0, 1.0, 0.0, 1.0);
-    try bfe.gfx.core.setPointSize(3);
+    try bfe.gfx.core.setPointSize(3.0 * s);
     try gfx.drawBatch(&gfx_dbg_com);
-    try bfe.gfx.core.setLineWidth(1);
+    try bfe.gfx.core.setLineWidth(1.0 * s);
     try bfe.gfx.base.setColor(.PxyCuniF32, 1.0, 1.0, 1.0, 1.0);
 }
 
@@ -433,6 +434,10 @@ const TirePrm = struct {
         peak: f32 = 1.0,
         curvature: f32 = 0.97,
     } = .{},
+    co: struct {
+        stiffness: f32 = 0.5,
+        dropoff: f32 = 0.5
+    } = .{},
 
     // 195/55 R16
     r: f32 = 0.62 / 2.0,
@@ -444,7 +449,7 @@ var is_accelerating: bool = false;
 var is_decelerating: bool = false;
 var is_handbraking: bool = false;
 
-const n_cars = 16;
+const n_cars = 1;
 const Vec2d = @Vector(2, f32);
 const Vec4d = @Vector(4, f32);
 const Vec8d = @Vector(8, f32);
@@ -775,17 +780,11 @@ fn updateTireForces() void {
             var r_slip: f32 = 0.0;
             var dir: f32 = 1.0;
             if (is_accelerating and t_i.is_powered) t_i.wheel_torque += e.throttle / @as(f32, @floatFromInt(d.n_powered));
-            // log_car.debug("wheel torque = {d:.2}Nm", .{t_i.wheel_torque});
-            if (v_lon > 0.1 or v_lon <= -0.01) {
+            if (v_lon > 0.1) {
                 r_slip = std.math.clamp((v_cp / v_lon - 1) * 100, -100.0, 100.0);
-                // if (is_accelerating and v_thr > 0.0) r_slip = @min(100.0, (v_thr / v_lon - 1) * 100);
-                //
-                // else r_slip = v_abs / v_lon - 1; // This is just a hack, adapt
-                // else r_slip = -100.0;
-            } else if (v_lon < 0.1) {
+            } else if (v_lon < 0.1 and v_lon > -0.01) {
                 if (is_accelerating) r_slip = v_lon + 0.01;
             } else {
-                // if (is_accelerating and v_thr > 0.0) r_slip = @min(100.0, (v_thr / -v_lon - 1) * 100);
                 r_slip = -100.0;//v_abs / v_lon - 1;
                 dir = -1.0;
             }
@@ -834,7 +833,6 @@ fn updateTireForces() void {
                 power = dir * t_i.f_z * tire_prm.lon.peak * @sin(tire_prm.lon.shape * std.math.atan(slip_r - tire_prm.lon.curvature * (slip_r - std.math.atan(slip_r))));
             // }
             if (v_abs > 0.01) {
-                // const rolling_resistence = t_i.f_z * 0.01;
                 const rolling_resistence = t_i.f_z * 0.01;
                 t_i.f_x = -rolling_resistence + power;
             } else {
@@ -843,13 +841,10 @@ fn updateTireForces() void {
 
             // Lateral / Longitudinal combination
             // cos(C * arctan (B * r_slip))
-            const c_c = 0.8;
-            const b_c = 0.1;
             const t_max = t_i.f_z;
             t_i.f_x = @min(t_i.f_x, t_max);
-            // if (t_i.is_powered) t_i.f_y = t_i.f_y * @max(0.0, @cos(c_c * std.math.atan(b_c * r_slip)));
-            t_i.f_y = t_i.f_y * @max(0.0, @cos(c_c * std.math.atan(b_c * r_slip)));
-            t_i.f_x = t_i.f_x * @max(0.0, @cos(c_c * std.math.atan(b_c * a_slip)));
+            t_i.f_y = t_i.f_y * @max(0.0, @cos(tire_prm.co.dropoff * std.math.atan(tire_prm.co.stiffness * r_slip)));
+            t_i.f_x = t_i.f_x * @max(0.0, @cos(tire_prm.co.dropoff * std.math.atan(tire_prm.co.stiffness * a_slip)));
 
 
             // Counter torque due to tire friction and slip
@@ -858,7 +853,7 @@ fn updateTireForces() void {
             const torque_max = t_i.f_x * tire_prm.r;
             const torque = std.math.sign(torque_target) * @min(@abs(torque_target), @abs(torque_max));
 
-            t_i.wheel_torque += torque;
+            t_i.wheel_torque += dir * torque;
 
             // Brake
             if (i == 1 or i == 2) t_i.wheel_torque -= br.torque * br.balance_front
@@ -869,7 +864,8 @@ fn updateTireForces() void {
                 t_i.wheel_torque -= 10000.0;
             }
 
-            if (t_i.wheel_vel < 0.0) {
+            if ((dir >= 0.0 and t_i.wheel_vel < 0.0) or
+                (dir <  0.0 and t_i.wheel_vel > 0.0)) {
                 t_i.wheel_torque = 0.0;
                 t_i.wheel_acc = 0.0;
                 t_i.wheel_vel = 0.0;
@@ -889,7 +885,6 @@ fn updateTireForces() void {
                 buf_tire_counter_torque[i].add(torque);
             }
         }
-
     }
 
     pf.phy_tire.stop();
@@ -934,12 +929,12 @@ fn applyForceAndTorque() void {
 }
 
 fn clearForceAndTorque() void {
-    var n_powered: u32 = 0;
-    for (cars.items(.body), cars.items(.tires)) |_,t| {
-        for (t) |t_i| {
-            if (t_i.is_powered) n_powered += 1;
-        }
-    }
+    // var n_powered: u32 = 0;
+    // for (cars.items(.body), cars.items(.tires)) |_,t| {
+    //     for (t) |t_i| {
+    //         if (t_i.is_powered) n_powered += 1;
+    //     }
+    // }
     for (cars.items(.body), cars.items(.tires)) |*b, *t| {
         b.acc = .{0.0, 0.0};
         b.force = .{0.0, 0.0};

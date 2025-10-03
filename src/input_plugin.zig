@@ -27,8 +27,16 @@ const CarControlSetup = struct {
 };
 
 const GameControlSetup = struct {
+    cam_x_jid: i32 = 0,
+    cam_x_axis: i32 = 3,
+    cam_x_invert: f32 = 1.0,
+    cam_x_deadzone: f32 = 1.0,
+    cam_y_jid: i32 = 0,
+    cam_y_axis: i32 = 4,
+    cam_y_invert: f32 = 1.0,
+    cam_y_deadzone: f32 = 1.0,
     pause_jid: i32 = 0,
-    pause_bt: i32 = 1
+    pause_bt: i32 = 1,
 };
 
 const ControlSetup = struct {
@@ -137,8 +145,8 @@ fn process() void {
     if (ipt.getKeyState(.key_right)) gfx_cam.moveVelRel(0.5, 0);
     if (ipt.getKeyState(.key_up)) gfx_cam.moveVelRel(0, 0.5);
     if (ipt.getKeyState(.key_down)) gfx_cam.moveVelRel(0, -0.5);
-    if (ipt.getKeyState(.key_page_up)) gfx_cam.zoomBy(-0.05);
-    if (ipt.getKeyState(.key_page_down)) gfx_cam.zoomBy(0.05);
+    if (ipt.getKeyState(.key_page_up)) gfx_cam.zoomBy(-0.02);
+    if (ipt.getKeyState(.key_page_down)) gfx_cam.zoomBy(0.02);
     if (ipt.getKeyState(.key_space)) car.useHandbrake();
     if (ipt.getKeyState(.key_e)) car.increaseThrottle();
     if (ipt.getKeyState(.key_q)) car.decreaseThrottle();
@@ -147,15 +155,27 @@ fn process() void {
     if (ipt.getKeyState(.key_a)) car.steerLeft();
     if (ipt.getKeyState(.key_d)) car.steerRight();
 
-    car.steer(getSteering(), getSteeringInvert());
-    car.brake(getBrake(), getBrakeInvert());
-    if (getHandbrake()) car.useHandbrake();
-    car.throttle(getThrottle(), getThrottleInvert());
+    if (ipt.getJoysticks().contains(control_setup.car.throttle_jid)) {
+        car.steer(getSteering(), getSteeringInvert());
+        car.brake(getBrake(), getBrakeInvert());
+        if (getHandbrake()) car.useHandbrake();
+        car.throttle(getThrottle(), getThrottleInvert());
 
-    if (ipt.getButtonState(control_setup.game.pause_jid, control_setup.game.pause_bt)) pause = true;
-    if (pause and !ipt.getButtonState(control_setup.game.pause_jid, control_setup.game.pause_bt)) {
-        main.togglePause();
-        pause = false;
+        var cam_x: f32 = ipt.getAxisState(control_setup.game.cam_x_jid, control_setup.game.cam_x_axis) *
+                        control_setup.game.cam_x_invert;
+        var cam_y: f32 = ipt.getAxisState(control_setup.game.cam_y_jid, control_setup.game.cam_y_axis) *
+                        control_setup.game.cam_y_invert;
+        const dz_x = control_setup.game.cam_x_deadzone;
+        const dz_y = control_setup.game.cam_y_deadzone;
+        if (@abs(cam_x) < dz_x) cam_x = dz_x;
+        if (@abs(cam_y) < dz_y) cam_y = dz_y;
+        gfx_cam.moveVelRel(2.0 * (cam_x - dz_x) / (1.0 - dz_x), 2.0 * (cam_y - dz_y) / (1.0 - dz_y));
+
+        if (ipt.getButtonState(control_setup.game.pause_jid, control_setup.game.pause_bt)) pause = true;
+        if (pause and !ipt.getButtonState(control_setup.game.pause_jid, control_setup.game.pause_bt)) {
+            main.togglePause();
+            pause = false;
+        }
     }
 }
 

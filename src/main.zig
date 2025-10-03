@@ -8,6 +8,7 @@ const id_type = bfe.util.id_type;
 
 const car = @import("car.zig");
 const input = @import("input_plugin.zig");
+const roads = @import("road_network.zig");
 
 pub const std_options: std.Options = .{
     .log_scope_levels = &[_]std.log.ScopeLevel{
@@ -34,7 +35,8 @@ pub fn main() !void {
 
     bfe.gfx.core.setFpsTarget(60.0);
     try bfe.gfx.core.init();
-    try bfe.gfx.base.init(.{}, "./src/bfe/gfx/shader/");
+    try bfe.gfx.base.init(.{ .MagFilter = .Linear, .MinFilter = .Linear},
+                          "./src/bfe/gfx/shader/");
     try bfe.gfx.gui.init();
     try bfe.input.init(bfe.gfx.core.getWindow());
     try input.init();
@@ -68,7 +70,10 @@ pub fn main() !void {
 
         if (!pause) try car.update();
 
+        try bfe.gfx.base.clearFBOFullscreen();
+        try bfe.gfx.base.useFBOFullscreen();
         try car.render();
+        try bfe.gfx.base.renderFBOFullscreen();
 
         pf_gui.start();
         
@@ -93,10 +98,6 @@ pub fn main() !void {
 
 pub fn togglePause() void {
     pause = !pause;
-}
-
-pub fn setPause() void {
-    pause = true;
 }
 
 //-----------------------------------------------------------------------------//
