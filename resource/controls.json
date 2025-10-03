@@ -1,0 +1,27 @@
+{
+    "car": {
+        "steer_jid": 0,
+        "steer_axis": 0,
+        "steer_invert": 1.0,
+        "throttle_jid": 0,
+        "throttle_axis": 5,
+        "throttle_invert": 1.0,
+        "brake_jid": 0,
+        "brake_axis": 2,
+        "brake_invert": 1.0,
+        "handbrake_jid": 0,
+        "handbrake_bt": 0
+    },
+    "game": {
+        "cam_x_jid": 0,
+        "cam_x_axis": 3,
+        "cam_x_invert": 1.0,
+        "cam_x_deadzone": 0.15,
+        "cam_y_jid": 0,
+        "cam_y_axis": 4,
+        "cam_y_invert": -1.0,
+        "cam_y_deadzone": 0.15,
+        "pause_jid": 0,
+        "pause_bt": 7
+    }
+}
