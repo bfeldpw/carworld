@@ -668,7 +668,7 @@ fn updateCarGfx() !void {
             try gfx.modifyData(b.obj, 0, &v);
         }
         {
-            for (ts) |*t| {
+            for (ts, 0..) |*t, i| {
                 if (t.is_steered) {
                     const t0 = transformOffset(s.angle, Vec2d{-tire_prm.r, -tire_prm.w_half}, t.pos);
                     const t1 = transformOffset(s.angle, Vec2d{ tire_prm.r, -tire_prm.w_half}, t.pos);
@@ -702,8 +702,12 @@ fn updateCarGfx() !void {
                     // Direction is 90° (-sin, cos, switch coordinates and negate x)
                     // but the force is oriented agains the cars movement, therefore
                     // the vector has to be negated
-                    const p1 = transformOffset(b.angle, t.pos, b.pos + scaleDbg2(getVec2Lateral(t.f_y, t.angle)));
-                    const p2 = transformOffset(b.angle, t.pos, b.pos + scaleDbg2(getVec2(t.f_x, t.angle)));// getVec2Lateral(t.f_x, t.angle + std.math.pi * 0.5));
+                    // Use the buffered forces to catch all substeps rather than a
+                    // snapshot
+                    const p1 = transformOffset(b.angle, t.pos, b.pos +
+                                               scaleDbg2(getVec2Lateral(@floatCast(buf_tire_fy[i].getAvg()), t.angle)));
+                    const p2 = transformOffset(b.angle, t.pos, b.pos +
+                                               scaleDbg2(getVec2(@floatCast(buf_tire_fx[i].getAvg()), t.angle)));
                     // Debug vector for forces
                     var v_dbg: [6]f32 = .{p2[0], p2[1], p0[0], p0[1], p1[0], p1[1]};
                     try gfx.modifyData(t.obj, 1, &v_dbg);
