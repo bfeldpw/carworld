@@ -362,7 +362,7 @@ const BodyDef = struct {
 };
 
 const BrakesDef = struct {
-    torque_max: f32 = 2000.0, // Nm
+    torque_max: f32 = 1000.0, // Nm
     torque: f32 = 0.0, // Nm
     balance_front: f32 = 0.5,
 };
@@ -497,7 +497,7 @@ fn initCars(allocator: std.mem.Allocator) !void {
         car.body.area_y = 6.5;
 
         car.brakes.torque = 0.0;
-        car.brakes.torque_max = 1000.0;
+        car.brakes.torque_max = 100.0;
         car.brakes.balance_front = 0.4;
         
         car.engine.throttle = 0.0;

@@ -56,6 +56,7 @@ pub fn main() !void {
 
     try input.loadControlConfig(allocator, "resource/controls.json");
     
+    try roads.init();
     try car.init(allocator);
     defer car.deinit(allocator);
 
@@ -72,6 +73,7 @@ pub fn main() !void {
 
         try bfe.gfx.base.clearFBOFullscreen();
         try bfe.gfx.base.useFBOFullscreen();
+        try roads.render();
         try car.render();
         try bfe.gfx.base.renderFBOFullscreen();
 
@@ -113,6 +115,8 @@ fn handleCameraEvent(w: f32, p: [4]f32) void {
     const h = w / bfe.gfx.core.getAspect();
     bfe.gfx.base.updateProjection(.PxyCuniF32, -w + p[0] + p[2], w + p[0] + p[2],
                                                -h + p[1] + p[3], h + p[1] + p[3]);
+    bfe.gfx.base.updateProjection(.PxyCrgbaF32, -w + p[0] + p[2], w + p[0] + p[2],
+                                                -h + p[1] + p[3], h + p[1] + p[3]);
 }
 
 fn setupGui() !void {
