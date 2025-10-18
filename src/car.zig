@@ -55,11 +55,14 @@ pub fn getCarData(a: std.mem.Allocator, idx: usize) ![]u8 {
     std.debug.assert(idx >= 0);
     std.debug.assert(idx < n_cars);
 
+    const brake_bias = cars.items(.brakes)[car_hooked].bias_front;
+
     const str1 = try std.fmt.allocPrint(
         a,
         "GENERIC\n" ++
-        "  Velocity = {d:.0} km/h\n" ++
-        "  Drive train layout: {s}\n" ++
+        "  Velocity:             {d:.0} km/h\n" ++
+        "  Brake bias:           {d:.1}:{d:.1}\n" ++
+        "  Drive train layout:   {s}\n" ++
         "\n" ++
         "TIRE MODEL\n" ++
         "  Linear   = {d:.0} %\n" ++
@@ -76,18 +79,11 @@ pub fn getCarData(a: std.mem.Allocator, idx: usize) ![]u8 {
         "                        {d:4.1} {d:4.1}\n" ++
         "\n" ++
         "  counter torque [Nm]   {d:4.1} {d:4.1}\n" ++
-        "                        {d:4.1} {d:4.1}\n" ++
-        "\n" ++
-        "  force lat. [kN]       {d:4.1} {d:4.1}\n" ++
-        "                        {d:4.1} {d:4.1}\n" ++
-        "\n" ++
-        "  force lon. [kN]       {d:4.1} {d:4.1}\n" ++
-        "                        {d:4.1} {d:4.1}\n" ++
-        "\n" ++
-        "  velocity lon. [km/h]  {d:4.1} {d:4.1}\n" ++
         "                        {d:4.1} {d:4.1}\n"
             ,
         .{getLength2(cars.items(.body)[idx].vel) * 3.6,
+          brake_bias * 100.0,
+          (1.0 - brake_bias) * 100.0,
           mapDriveTrainLayout(cars.items(.drive_train)[car_hooked].layout),
           buf_tire_model_lin.getAvg(),
           buf_tire_model_paj.getAvg(),
@@ -106,8 +102,28 @@ pub fn getCarData(a: std.mem.Allocator, idx: usize) ![]u8 {
           buf_tire_counter_torque[2].getAvg(),
           buf_tire_counter_torque[1].getAvg(),
           buf_tire_counter_torque[3].getAvg(),
-          buf_tire_counter_torque[0].getAvg(),
-          buf_tire_fy[2].getAvg() * 0.001,
+          buf_tire_counter_torque[0].getAvg()}
+    );
+
+    const str2 = try std.fmt.allocPrint(
+        a,
+        "\n" ++
+        "  force lat. [kN]       {d:4.1} {d:4.1}\n" ++
+        "                        {d:4.1} {d:4.1}\n" ++
+        "\n" ++
+        "  force lon. [kN]       {d:4.1} {d:4.1}\n" ++
+        "                        {d:4.1} {d:4.1}\n" ++
+        "\n" ++
+        "  velocity lon. [km/h]  {d:4.1} {d:4.1}\n" ++
+        "                        {d:4.1} {d:4.1}\n" ++
+        "\n" ++
+        "  velocity tan. [km/h]  {d:4.1} {d:4.1}\n" ++
+        "                        {d:4.1} {d:4.1}\n" ++
+        "\nAERODYNAMICS\n" ++
+        "    drag (front) = {d:.0} N\n" ++
+        "    drag (side)  = {d:.0} N\n"
+            ,
+        .{buf_tire_fy[2].getAvg() * 0.001,
           buf_tire_fy[1].getAvg() * 0.001,
           buf_tire_fy[3].getAvg() * 0.001,
           buf_tire_fy[0].getAvg() * 0.001,
@@ -118,19 +134,8 @@ pub fn getCarData(a: std.mem.Allocator, idx: usize) ![]u8 {
           buf_tire_lon[2].getAvg() * 3.6,
           buf_tire_lon[1].getAvg() * 3.6,
           buf_tire_lon[3].getAvg() * 3.6,
-          buf_tire_lon[0].getAvg() * 3.6}
-    );
-
-    const str2 = try std.fmt.allocPrint(
-        a,
-        "\n" ++
-        "  velocity tan. [km/h]  {d:4.1} {d:4.1}\n" ++
-        "                        {d:4.1} {d:4.1}\n" ++
-        "\nAERODYNAMICS\n" ++
-        "    drag (front) = {d:.0} N\n" ++
-        "    drag (side)  = {d:.0} N\n"
-            ,
-        .{buf_wheel_vel[2].getAvg() * 3.6,
+          buf_tire_lon[0].getAvg() * 3.6,
+          buf_wheel_vel[2].getAvg() * 3.6,
           buf_wheel_vel[1].getAvg() * 3.6,
           buf_wheel_vel[3].getAvg() * 3.6,
           buf_wheel_vel[0].getAvg() * 3.6,
@@ -168,6 +173,18 @@ pub fn throttle(t: f32, t_i: f32) void {
 pub fn brake(b: f32, b_i: f32) void {
     const br = &cars.items(.brakes)[car_hooked].torque;
     br.* += cars.items(.brakes)[car_hooked].torque_max * (b + 1.0) * 0.5 * b_i;
+}
+
+pub fn increaseBrakeBiasFront(v: f32) void {
+    const bias = &cars.items(.brakes)[car_hooked].bias_front;
+    bias.* += v;
+    if (bias.* > 1.0) bias.* = 1.0;
+}
+
+pub fn decreaseBrakeBiasFront(v: f32) void {
+    const bias = &cars.items(.brakes)[car_hooked].bias_front;
+    bias.* -= v;
+    if (bias.* < 0.0) bias.* = 0.0;
 }
 
 pub fn increaseThrottle() void {
@@ -364,7 +381,7 @@ const BodyDef = struct {
 const BrakesDef = struct {
     torque_max: f32 = 1000.0, // Nm
     torque: f32 = 0.0, // Nm
-    balance_front: f32 = 0.5,
+    bias_front: f32 = 0.5,
 };
 
 const DriveTrainLayoutE = enum(u8) {
@@ -383,6 +400,8 @@ fn mapDriveTrainLayout(e: DriveTrainLayoutE) []const u8 {
 
 const DriveTrainDef = struct {
     n_powered: u32 = 2,
+    gear: i32 = 0, // Neutral
+    gear_max: i32 = 5,
     layout: DriveTrainLayoutE = .rwd
 };
 
@@ -479,8 +498,8 @@ fn initCars(allocator: std.mem.Allocator) !void {
     while (i_car < n_cars) : (i_car += 1) {
         var car: Car = undefined;
         car.id.init();
-        // car.body0.pos = .{0.0, 0.0};//.{rand.float(f32) * 200 - 100, rand.float(f32) * 200 - 100};
-        car.body.pos = .{rand.float(f32) * 200 - 100, rand.float(f32) * 200 - 100};
+        car.body.pos = .{0.0, 0.0};//.{rand.float(f32) * 200 - 100, rand.float(f32) * 200 - 100};
+        // car.body.pos = .{rand.float(f32) * 200 - 100, rand.float(f32) * 200 - 100};
         car.body.angle = rand.float(f32) * 2.0 * std.math.pi;
         // car.body.angle = 0.0;//rand.float(f32) * 2.0 * std.math.pi;
         car.body.mass = 2000.0;
@@ -489,7 +508,7 @@ fn initCars(allocator: std.mem.Allocator) !void {
         car.body.acc = Vec2d{a * @cos(car.body.angle), a * @sin(car.body.angle)};
         car.body.vel_p = @splat(0.0);
         car.body.vel = @splat(0.0);
-        car.body.com0 = .{ 0.2, 0.0};
+        car.body.com0 = .{0.2, 0.0};
         car.body.com_z = 0.2;
         car.body.cw_x = 0.3;
         car.body.area_x = 2.2;
@@ -497,9 +516,12 @@ fn initCars(allocator: std.mem.Allocator) !void {
         car.body.area_y = 6.5;
 
         car.brakes.torque = 0.0;
-        car.brakes.torque_max = 100.0;
-        car.brakes.balance_front = 0.4;
+        car.brakes.torque_max = 1000.0;
+        car.brakes.bias_front = 0.6;
         
+        car.drive_train.gear = 1;
+        car.drive_train.gear_max = 5;
+
         car.engine.throttle = 0.0;
         car.engine.torque_max = 2000.0;
         car.engine.drag = 20.0;
@@ -603,8 +625,9 @@ fn updateCarDynamics() void {
         b.vel_p = b.vel;
         b.vel += b.acc * dt2;
         b.pos += b.vel * dt2;
-        b.acc += (b.vel - b.vel_p) / dt2;
-
+        // b.acc += (b.vel - b.vel_p) / dt2;
+    }
+    for (cars.items(.body)) |*b| {
         // "Suspension"
         // const f_acc = b.acc / (Vec2d{2.0, 2.0} * @abs(b.acc) + @as(Vec2d, @splat(1)));
         const f_acc = b.acc / (Vec2d{2.0, 2.0} * @abs(b.acc) + @as(Vec2d, @splat(1)));
@@ -748,9 +771,11 @@ fn updateTireForces() void {
 
     for (cars.items(.body), cars.items(.brakes), cars.items(.drive_train), cars.items(.engine), cars.items(.tires), 0..) |*b, br, d, e, *t, i_car| {
 
-        for (t, 0..) |*t_i, i| {
+        for (t) |*t_i| {
             t_i.f_x = 0.0;
             t_i.f_y = 0.0;
+        }
+        for (t, 0..) |*t_i, i| {
 
             // Calculate velocity of single tire, including the bodies angular velocity
             // ---
@@ -784,13 +809,11 @@ fn updateTireForces() void {
             var r_slip: f32 = 0.0;
             var dir: f32 = 1.0;
             if (is_accelerating and t_i.is_powered) t_i.wheel_torque += e.throttle / @as(f32, @floatFromInt(d.n_powered));
-            if (v_lon > 0.1) {
-                r_slip = std.math.clamp((v_cp / v_lon - 1) * 100, -100.0, 100.0);
-            } else if (v_lon < 0.1 and v_lon > -0.01) {
-                if (is_accelerating) r_slip = v_lon + 0.01;
+            if (is_accelerating and @abs(v_lon) < 0.1) {
+                r_slip = v_lon + 0.01;
             } else {
-                r_slip = -100.0;//v_abs / v_lon - 1;
-                dir = -1.0;
+                r_slip = std.math.clamp((v_cp / v_lon - 1) * 100, -100.0, 100.0);
+                if (v_lon < 0.0) dir = -1.0;
             }
 
             // Calculate lateral forces
@@ -842,6 +865,7 @@ fn updateTireForces() void {
             } else {
                 t_i.f_x = power;
             }
+            t_i.f_x *= @floatFromInt(d.gear);
 
             // Lateral / Longitudinal combination
             // cos(C * arctan (B * r_slip))
@@ -856,24 +880,30 @@ fn updateTireForces() void {
             const torque_target = acc / tire_prm.r * tire_prm.inertia;
             const torque_max = t_i.f_x * tire_prm.r;
             const torque = std.math.sign(torque_target) * @min(@abs(torque_target), @abs(torque_max));
-
-            t_i.wheel_torque += dir * torque;
+            t_i.wheel_torque += dir * torque * @as(f32, @floatFromInt(d.gear));
 
             // Brake
-            if (i == 1 or i == 2) t_i.wheel_torque -= br.torque * br.balance_front
-            else t_i.wheel_torque -= br.torque * (1.0 - br.balance_front);
+            if (i == 1 or i == 2) t_i.wheel_torque -= br.torque * br.bias_front
+            else t_i.wheel_torque -= br.torque * (1.0 - br.bias_front);
                 
             // Use handbrake
             if ((i == 0 or i == 3) and is_handbraking) {
-                t_i.wheel_torque -= 10000.0;
+                t_i.wheel_torque -= std.math.sign(t_i.wheel_vel) * 10000.0;
             }
 
-            if ((dir >= 0.0 and t_i.wheel_vel < 0.0) or
-                (dir <  0.0 and t_i.wheel_vel > 0.0)) {
+            // Fake maximum motor rev
+            if (@abs(t_i.wheel_vel) > 100.0) {
+                t_i.wheel_vel = std.math.sign(t_i.wheel_vel) * 100.0;
                 t_i.wheel_torque = 0.0;
                 t_i.wheel_acc = 0.0;
-                t_i.wheel_vel = 0.0;
             }
+
+            // if ((dir >= 0.0 and t_i.wheel_vel < 0.0) or
+            //     (dir <  0.0 and t_i.wheel_vel > 0.0)) {
+            //     t_i.wheel_torque = 0.0;
+            //     t_i.wheel_acc = 0.0;
+            //     t_i.wheel_vel = 0.0;
+            // }
 
             // Gather debug information of tire model
             if (i_car == car_hooked) {

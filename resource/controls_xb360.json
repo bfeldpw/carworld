@@ -10,7 +10,11 @@
         "brake_axis": 2,
         "brake_invert": 1.0,
         "handbrake_jid": 0,
-        "handbrake_bt": 0
+        "handbrake_bt": 0,
+        "brake_bias_inc_jid": 0,
+        "brake_bias_inc_bt": 12,
+        "brake_bias_dec_jid": 0,
+        "brake_bias_dec_bt": 14
     },
     "game": {
         "cam_x_jid": 0,

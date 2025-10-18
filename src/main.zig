@@ -54,7 +54,7 @@ pub fn main() !void {
 
     try setupGui();
 
-    try input.loadControlConfig(allocator, "resource/controls.json");
+    try input.loadControlConfig(allocator, "resource/controls_xb360.json");
     
     try roads.init();
     try car.init(allocator);

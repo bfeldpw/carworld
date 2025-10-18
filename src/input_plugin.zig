@@ -23,7 +23,11 @@ const CarControlSetup = struct {
     brake_axis: i32 = 2,
     brake_invert: f32 = 1.0,
     handbrake_jid: i32 = 0,
-    handbrake_bt: i32 = 0
+    handbrake_bt: i32 = 0,
+    brake_bias_inc_jid: i32 = 0,
+    brake_bias_inc_bt: i32 = 1,
+    brake_bias_dec_jid: i32 = 0,
+    brake_bias_dec_bt: i32 = 2,
 };
 
 const GameControlSetup = struct {
@@ -36,7 +40,7 @@ const GameControlSetup = struct {
     cam_y_invert: f32 = 1.0,
     cam_y_deadzone: f32 = 1.0,
     pause_jid: i32 = 0,
-    pause_bt: i32 = 1,
+    pause_bt: i32 = 3,
 };
 
 const ControlSetup = struct {
@@ -175,6 +179,12 @@ fn process() void {
         if (pause and !ipt.getButtonState(control_setup.game.pause_jid, control_setup.game.pause_bt)) {
             main.togglePause();
             pause = false;
+        }
+        if (ipt.getButtonState(control_setup.car.brake_bias_inc_jid, control_setup.car.brake_bias_inc_bt)) {
+            car.increaseBrakeBiasFront(0.001);
+        }
+        if (ipt.getButtonState(control_setup.car.brake_bias_dec_jid, control_setup.car.brake_bias_dec_bt)) {
+            car.decreaseBrakeBiasFront(0.001);
         }
     }
 }
