@@ -96,12 +96,30 @@ pub fn setupControls(ctl: ControlSetup) void {
 //   Getter/Setter
 //-----------------------------------------------------------------------------//
 
-pub fn loadControlConfig(allocator: std.mem.Allocator, f: []const u8) !void {
+pub fn loadControlConfig(io: std.Io, allocator: std.mem.Allocator, f: []const u8) !void {
     log_input.info("Loading controller config: {s}", .{f});
     
+    // const file = std.fs.cwd().openFile(f, .{.mode = .read_only}) catch |err| {
+    const file = (std.Io.Dir.cwd()).openFile(io, f, .{.mode = .read_only}) catch |e| {
+        log_input.warn("Unable to open file {s}: {}", .{f, e});
+        return;
+    };
+    defer file.close(io);
+
     // Read the JSON file into memory
-    const json_data = std.fs.cwd().readFileAlloc(f,allocator, std.Io.Limit.unlimited) catch |err| {
-        log_input.warn("Unable to read file {s}: {}", .{f, err});
+    const stat = file.stat(io) catch |e| {
+        log_input.warn("{}", .{e});
+        return;
+    };
+    log_input.debug("File size: {}", .{stat.size});
+
+    const json_data: []u8 = allocator.alloc(u8, stat.size) catch |e| {
+        log_input.warn("{}", .{e});
+        return;
+    };
+    var reader = file.reader(io, json_data);
+    reader.interface.fill(stat.size) catch |e| {
+        log_input.warn("Unable to read file {s}: {}", .{f, e});
         return;
     };
     defer allocator.free(json_data);

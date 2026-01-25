@@ -5,11 +5,12 @@ const cfg = bfe.cfg;
 const buf = bfe.util.value_buffer;
 const id_type = bfe.util.id_type;
 const stats = bfe.util.stats;
+const util = bfe.util;
 
 const gfx = @import("gfx_ext.zig");
 
 const fps_main = 60.0;
-const sub_steps = 12.0;
+const sub_steps = 12;
 const fps = fps_main * sub_steps;
 
 //-----------------------------------------------------------------------------//
@@ -17,7 +18,7 @@ const fps = fps_main * sub_steps;
 //-----------------------------------------------------------------------------//
 
 pub fn init(allocator: std.mem.Allocator) !void {
-    prng.seed(23041979 * @as(u64, @intCast(std.time.timestamp())));
+    util.seedPrngByTimestamp(&prng);
 
     log_car.info("Car physics running at {} Hz", .{fps});
 
@@ -468,7 +469,7 @@ var is_accelerating: bool = false;
 var is_decelerating: bool = false;
 var is_handbraking: bool = false;
 
-const n_cars = 1;
+const n_cars = 2096;
 const Vec2d = @Vector(2, f32);
 const Vec4d = @Vector(4, f32);
 const Vec8d = @Vector(8, f32);

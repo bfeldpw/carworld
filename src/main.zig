@@ -5,6 +5,7 @@ const cam = bfe.gfx.cam;
 const cfg = bfe.cfg;
 const gui = bfe.gfx.gui;
 const id_type = bfe.util.id_type;
+const util = bfe.util;
 
 const car = @import("car.zig");
 const input = @import("input_plugin.zig");
@@ -31,13 +32,18 @@ pub fn main() !void {
     const arena = arena_allocator.allocator();
 
     // Init
-    prng.seed(23041979 * @as(u64, @intCast(std.time.timestamp())));
+    util.seedPrngByTimestamp(&prng);
+
+    var io_threaded: std.Io.Threaded = .init(allocator, .{.environ = .empty});
+    defer io_threaded.deinit();
+    const io = io_threaded.io();
 
     bfe.gfx.core.setFpsTarget(60.0);
     try bfe.gfx.core.init();
-    try bfe.gfx.base.init(.{ .MagFilter = .Linear, .MinFilter = .Linear},
+    try bfe.gfx.base.init(io,
+                          .{ .MagFilter = .Linear, .MinFilter = .Linear},
                           "./src/bfe/gfx/shader/");
-    try bfe.gfx.gui.init();
+    try bfe.gfx.gui.init(io);
     try bfe.input.init(bfe.gfx.core.getWindow());
     try input.init();
     defer bfe.gfx.core.deinit();
@@ -54,7 +60,7 @@ pub fn main() !void {
 
     try setupGui();
 
-    try input.loadControlConfig(allocator, "resource/controls_xb360.json");
+    try input.loadControlConfig(io, allocator, "resource/controls_xb360.json");
     
     try roads.init();
     try car.init(allocator);
@@ -87,7 +93,7 @@ pub fn main() !void {
 
         pf_gui.stop();
 
-        try bfe.gfx.core.finishFrame();
+        try bfe.gfx.core.finishFrame(io);
 
         if (arena_allocator.reset(.retain_capacity) == false) {
             std.log.warn("Arena allocator reset not succesful", .{});
