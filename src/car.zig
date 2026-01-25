@@ -146,6 +146,10 @@ pub fn getCarData(a: std.mem.Allocator, idx: usize) ![]u8 {
     return try std.fmt.allocPrint(a, "{s}{s}", .{str1, str2});
 }
 
+pub fn getCarVelocityHooked() f32 {
+    return getLength2(cars.items(.body)[car_hooked].vel);
+}
+
 pub fn setHook() void {
     // Only iterate through cars for testing purposes right now
     car_hooked += 1;
@@ -469,7 +473,7 @@ var is_accelerating: bool = false;
 var is_decelerating: bool = false;
 var is_handbraking: bool = false;
 
-const n_cars = 2096;
+const n_cars = 64;
 const Vec2d = @Vector(2, f32);
 const Vec4d = @Vector(4, f32);
 const Vec8d = @Vector(8, f32);

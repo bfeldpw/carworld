@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const bfe = @import("bfe");
+const buf = bfe.util.value_buffer;
 const cam = bfe.gfx.cam;
 const cfg = bfe.cfg;
 const gui = bfe.gfx.gui;
@@ -54,6 +55,7 @@ pub fn main() !void {
     try cam.init(.{.w = 50, .x_lim = .{-1000, 1000}, .y_lim = .{-1000, 1000}});
     defer cam.deinit();
     try cam.addCameraEventCallback(&handleCameraEvent);
+    try cam.addPlugin(&handleCameraUpdate);
 
     try bfe.gfx.core.setPointSize(5);
     try bfe.gfx.base.setColor(.PxyCuniF32,1,1,1,1);
@@ -123,6 +125,13 @@ fn handleCameraEvent(w: f32, p: [4]f32) void {
                                                -h + p[1] + p[3], h + p[1] + p[3]);
     bfe.gfx.base.updateProjection(.PxyCrgbaF32, -w + p[0] + p[2], w + p[0] + p[2],
                                                 -h + p[1] + p[3], h + p[1] + p[3]);
+}
+
+var buf_v: buf.Buffer(f32, 120.0) = buf.Buffer(f32, 120).init();
+fn handleCameraUpdate() void {
+    const v = car.getCarVelocityHooked();
+    buf_v.add(v);
+    cam.zoomToHook(@as(f32, @floatCast(buf_v.getAvg() * buf_v.getAvg())) * 0.01);
 }
 
 fn setupGui() !void {
